@@ -34,11 +34,26 @@ async def start_bot(request: Request):
         res = requests.get(tg_url).json()
 
         if res.get("ok"):
-            return {"success": True, "message": "Схема обновлена! Бот готов."}
+            return {"success": True, "message": "Конфигурация бота обновлена!"}
         else:
             return JSONResponse({"success": False, "message": res.get("description")}, status_code=400)
     except Exception as e:
         return JSONResponse({"success": False, "message": str(e)}, status_code=500)
+
+def build_keyboard(btn_text, btn_type, callback_id=""):
+    """Формирует структурированную клавиатуру: Inline (с дропом) или Reply (без дропа)"""
+    if not btn_text:
+        return None
+
+    if btn_type == "inline":
+        return {
+            "inline_keyboard": [[{"text": btn_text, "callback_data": f"btn_{callback_id}"}]]
+        }
+    else:  # reply (обычная клавиатура внизу)
+        return {
+            "keyboard": [[{"text": btn_text}]],
+            "resize_keyboard": True
+        }
 
 @app.post("/api/webhook/{token}")
 async def handle_webhook(token: str, request: Request):
@@ -48,49 +63,62 @@ async def handle_webhook(token: str, request: Request):
         drawflow_data = graph.get("drawflow", {}).get("Home", {}).get("data", {})
 
         send_url = f"https://api.telegram.org/bot{token}/sendMessage"
-
-        # Обработка сообщения или клика по Inline-кнопке
         chat_id = None
         user_input = None
-        is_callback = False
+        clicked_target_node = None
 
+        # Разбор входных данных (сообщение или клик на Inline-кнопку)
         if "message" in data:
             chat_id = data["message"]["chat"]["id"]
-            user_input = data["message"].get("text", "")
+            user_input = data["message"].get("text", "").strip()
         elif "callback_query" in data:
             chat_id = data["callback_query"]["message"]["chat"]["id"]
-            user_input = data["callback_query"].get("data", "")
-            is_callback = True
+            callback_data = data["callback_query"].get("data", "")
+            if callback_data.startswith("btn_"):
+                clicked_target_node = callback_data.replace("btn_", "")
 
         if chat_id and drawflow_data:
-            # Обработка /start
-            if user_input == "/start":
-                start_node = drawflow_data.get("1", {})
-                text = start_node.get("custom_text", "Привет!")
-                btn_text = start_node.get("custom_btn", "")
+            target_node = None
+
+            # 1. Если был клик по Inline-кнопке (с дропом) — переходим на целевой узел
+            if clicked_target_node and clicked_target_node in drawflow_data:
+                target_node = drawflow_data[clicked_target_node]
+
+            # 2. Иначе ищем узел по тексту триггера или по нажатой Reply-кнопке (без дропа)
+            if not target_node:
+                for node_id, node in drawflow_data.items():
+                    trg = node.get("custom_trigger", "").lower()
+                    btn = node.get("custom_btn", "").lower()
+
+                    # Совпадение по названию триггера или тексту обычной кнопки
+                    if (trg and user_input.lower() == trg) or (btn and user_input.lower() == btn):
+                        # Берём узел, соединённый с текущим, если есть выходное соединение
+                        outs = node.get("outputs", {}).get("output_1", {}).get("connections", [])
+                        if outs:
+                            next_id = outs[0].get("node")
+                            target_node = drawflow_data.get(next_id)
+                        else:
+                            target_node = node
+                        break
+
+            # 3. Отправка ответа
+            if target_node:
+                text = target_node.get("custom_text", "")
+                btn_text = target_node.get("custom_btn", "")
+                btn_type = target_node.get("custom_type", "inline")
+
+                # Определяем, куда вести при клике на Inline-кнопку
+                next_node_id = ""
+                outs = target_node.get("outputs", {}).get("output_1", {}).get("connections", [])
+                if outs:
+                    next_node_id = outs[0].get("node")
 
                 payload = {"chat_id": chat_id, "text": text}
-                
-                # Если в узел добавлена кнопка, отправляем её
-                if btn_text:
-                    payload["reply_markup"] = {
-                        "inline_keyboard": [[{"text": btn_text, "callback_data": "next_step"}]]
-                    }
+                markup = build_keyboard(btn_text, btn_type, callback_id=next_node_id)
+                if markup:
+                    payload["reply_markup"] = markup
 
                 requests.post(send_url, json=payload)
-
-            # Обработка клика по кнопке
-            elif user_input == "next_step":
-                # Ищем следующий узел, соединенный со стартовым
-                next_text = "Вы нажали кнопку!"
-                if "1" in drawflow_data and "outputs" in drawflow_data["1"]:
-                    output_connections = drawflow_data["1"]["outputs"].get("output_1", {}).get("connections", [])
-                    if output_connections:
-                        target_node_id = output_connections[0].get("node")
-                        if target_node_id in drawflow_data:
-                            next_text = drawflow_data[target_node_id].get("custom_text", next_text)
-
-                requests.post(send_url, json={"chat_id": chat_id, "text": next_text})
 
         return {"status": "ok"}
     except Exception as e:
