@@ -6,25 +6,35 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/jerosoler/Drawflow/dist/drawflow.min.css">
     <script src="https://cdn.jsdelivr.net/gh/jerosoler/Drawflow/dist/drawflow.min.js"></script>
     <style>
-        * { box-sizing: border-box; font-family: sans-serif; }
+        * { box-sizing: border-box; font-family: 'Segoe UI', sans-serif; }
         body { margin: 0; background: #0f0f17; color: #fff; display: flex; flex-direction: column; height: 100vh; }
-        header { padding: 12px; background: #181825; display: flex; gap: 10px; }
-        input { background: #313244; border: 1px solid #45475a; padding: 10px; color: #fff; border-radius: 6px; flex: 1; }
-        button { background: #89b4fa; border: none; padding: 10px 18px; font-weight: bold; border-radius: 6px; cursor: pointer; }
+        header { padding: 12px 20px; background: #181825; display: flex; gap: 15px; border-bottom: 1px solid #313244; }
+        input[type="text"] { background: #313244; border: 1px solid #45475a; padding: 10px; color: #fff; border-radius: 6px; flex: 1; }
+        button { background: #89b4fa; border: none; padding: 10px 18px; font-weight: bold; border-radius: 6px; cursor: pointer; color: #11111b; }
+        button:hover { background: #b4befe; }
         main { flex: 1; display: flex; }
+        .sidebar { width: 240px; background: #181825; padding: 15px; border-right: 1px solid #313244; z-index: 10; }
+        .btn-add { background: #313244; color: #89b4fa; border: 1px solid #89b4fa; width: 100%; padding: 10px; margin-bottom: 10px; border-radius: 6px; cursor: pointer; text-align: left; }
         #drawflow { width: 100%; height: 100%; background: #11111b; }
-        .drawflow .drawflow-node { background: #1e1e2e; border: 2px solid #89b4fa; color: #fff; border-radius: 8px; width: 220px; padding: 10px; }
-        .drawflow .drawflow-node textarea { width: 100%; background: #313244; border: 1px solid #45475a; color: #fff; padding: 6px; border-radius: 4px; }
+        
+        .drawflow .drawflow-node { background: #1e1e2e; border: 2px solid #89b4fa; color: #fff; border-radius: 8px; width: 240px; padding: 12px; }
+        .drawflow .drawflow-node input, .drawflow .drawflow-node textarea { width: 100%; background: #313244; border: 1px solid #45475a; color: #fff; padding: 6px; border-radius: 4px; margin-top: 5px; }
+        .drawflow .drawflow-node .input, .drawflow .drawflow-node .output { background: #89b4fa; width: 14px; height: 14px; }
     </style>
 </head>
 <body>
 
 <header>
-    <input type="text" id="botToken" placeholder="Введите токен Telegram-бота">
-    <button onclick="deployBot()">Запустить на Vercel</button>
+    <h3 style="margin: 0; color: #89b4fa;">Kipouk</h3>
+    <input type="text" id="botToken" placeholder="Токен бота Telegram">
+    <button onclick="deployBot()">Запустить бота</button>
 </header>
 
 <main>
+    <div class="sidebar">
+        <h4>Добавить блок</h4>
+        <button class="btn-add" onclick="addMsgNode()">+ Сообщение с кнопкой</button>
+    </div>
     <div id="drawflow"></div>
 </main>
 
@@ -33,31 +43,50 @@
     const editor = new Drawflow(id);
     editor.start();
 
+    // Стартовый узел (/start)
     editor.addNode('start', 0, 1, 50, 100, 'start', {}, `
         <div>
-            <b>Старт (/start)</b><br><br>
-            <textarea id="start_text" rows="3">Привет! Мой бот запущен через Vercel.</textarea>
+            <b style="color:#89b4fa">Команда /start</b><br>
+            <textarea id="node_start_text" rows="2" placeholder="Текст...">Привет! Выбери вариант:</textarea>
+            <input type="text" id="node_start_btn" placeholder="Текст кнопки (напр: Кнопка 1)">
         </div>
     `);
 
+    function addMsgNode() {
+        const nodeId = Date.now();
+        editor.addNode('message', 1, 1, 350, 150, 'message', {}, `
+            <div>
+                <b>Следующий ответ</b><br>
+                <textarea id="node_${nodeId}_text" rows="2" placeholder="Ответный текст..."></textarea>
+            </div>
+        `);
+    }
+
     async function deployBot() {
         const token = document.getElementById('botToken').value.trim();
-        if (!token) return alert('Введите токен!');
+        if (!token) return alert('Укажите токен!');
 
-        let graph = editor.export();
-        // Записываем текст из textarea напрямую в объект графа
-        const startText = document.getElementById('start_text').value;
-        graph.drawflow.Home.data[1].html_text = startText;
+        const rawGraph = editor.export();
+        const nodesData = rawGraph.drawflow.Home.data;
+
+        // Собираем значения из текстовых полей вручную
+        for (const [id, node] of Object.entries(nodesData)) {
+            const txt = document.getElementById(`node_${id === '1' ? 'start' : id}_text`);
+            const btn = document.getElementById(`node_${id === '1' ? 'start' : id}_btn`);
+            if (txt) node.custom_text = txt.value;
+            if (btn) node.custom_btn = btn.value;
+        }
 
         const res = await fetch('/api/start-bot', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token: token, graph: graph })
+            body: JSON.stringify({ token: token, graph: rawGraph })
         });
 
         const data = await res.json();
         alert(data.message);
     }
 </script>
+
 </body>
 </html>
