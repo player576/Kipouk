@@ -2,45 +2,29 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Kipouk — Конструктор Telegram-ботов</title>
-    <!-- Подключаем стили и скрипт Drawflow -->
+    <title>Kipouk — Конструктор Ботов</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/jerosoler/Drawflow/dist/drawflow.min.css">
     <script src="https://cdn.jsdelivr.net/gh/jerosoler/Drawflow/dist/drawflow.min.js"></script>
     <style>
-        * { box-sizing: border-box; font-family: 'Segoe UI', sans-serif; }
-        body { margin: 0; background: #0f0f17; color: #cdd6f4; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
-        header { padding: 12px 20px; background: #181825; display: flex; gap: 15px; align-items: center; border-bottom: 1px solid #313244; }
-        input[type="text"] { background: #313244; border: 1px solid #45475a; padding: 10px 14px; color: #fff; border-radius: 6px; flex: 1; }
-        button { background: #89b4fa; color: #11111b; border: none; padding: 10px 18px; font-weight: bold; border-radius: 6px; cursor: pointer; }
-        button:hover { background: #b4befe; }
-        
-        main { flex: 1; display: flex; relative; }
-        .sidebar { width: 260px; background: #181825; padding: 20px; border-right: 1px solid #313244; z-index: 10; }
-        .btn-add { background: #313244; color: #89b4fa; border: 1px solid #89b4fa; width: 100%; padding: 12px; margin-bottom: 10px; text-align: left; border-radius: 6px; cursor: pointer; }
-        .btn-add:hover { background: #45475a; }
-
+        * { box-sizing: border-box; font-family: sans-serif; }
+        body { margin: 0; background: #0f0f17; color: #fff; display: flex; flex-direction: column; height: 100vh; }
+        header { padding: 12px; background: #181825; display: flex; gap: 10px; }
+        input { background: #313244; border: 1px solid #45475a; padding: 10px; color: #fff; border-radius: 6px; flex: 1; }
+        button { background: #89b4fa; border: none; padding: 10px 18px; font-weight: bold; border-radius: 6px; cursor: pointer; }
+        main { flex: 1; display: flex; }
         #drawflow { width: 100%; height: 100%; background: #11111b; }
-        
-        /* Кастомные стили нодов Drawflow */
         .drawflow .drawflow-node { background: #1e1e2e; border: 2px solid #89b4fa; color: #fff; border-radius: 8px; width: 220px; padding: 10px; }
-        .drawflow .drawflow-node .input, .drawflow .drawflow-node .output { background: #89b4fa; width: 14px; height: 14px; border-radius: 50%; }
-        .drawflow .drawflow-node textarea { width: 100%; background: #313244; border: 1px solid #45475a; color: #fff; padding: 6px; border-radius: 4px; resize: vertical; }
+        .drawflow .drawflow-node textarea { width: 100%; background: #313244; border: 1px solid #45475a; color: #fff; padding: 6px; border-radius: 4px; }
     </style>
 </head>
 <body>
 
 <header>
-    <h2 style="margin: 0; color: #89b4fa;">Kipouk</h2>
-    <input type="text" id="botToken" placeholder="Вставьте токен бота (от BotFather)">
-    <button onclick="saveAndLaunch()">Запустить бота</button>
+    <input type="text" id="botToken" placeholder="Введите токен Telegram-бота">
+    <button onclick="deployBot()">Запустить на Vercel</button>
 </header>
 
 <main>
-    <div class="sidebar">
-        <h3>Блоки</h3>
-        <button class="btn-add" onclick="addMessageNode()">+ Сообщение</button>
-    </div>
-
     <div id="drawflow"></div>
 </main>
 
@@ -49,43 +33,31 @@
     const editor = new Drawflow(id);
     editor.start();
 
-    // Создаем дефолтный стартовый узел (/start)
     editor.addNode('start', 0, 1, 50, 100, 'start', {}, `
         <div>
-            <b style="color:#89b4fa">Старт (/start)</b><br><br>
-            <textarea class="node-text" rows="3" placeholder="Текст приветствия...">Привет! Я бот, созданный в Kipouk.</textarea>
+            <b>Старт (/start)</b><br><br>
+            <textarea id="start_text" rows="3">Привет! Мой бот запущен через Vercel.</textarea>
         </div>
     `);
 
-    function addMessageNode() {
-        editor.addNode('message', 1, 1, 300, 150, 'message', {}, `
-            <div>
-                <b>Сообщение</b><br><br>
-                <textarea class="node-text" rows="3" placeholder="Введите текст..."></textarea>
-            </div>
-        `);
-    }
-
-    async function saveAndLaunch() {
+    async function deployBot() {
         const token = document.getElementById('botToken').value.trim();
-        if (!token) {
-            alert('Введите токен бота!');
-            return;
-        }
+        if (!token) return alert('Введите токен!');
 
-        // Экспортируем весь граф связей и нодов в JSON
-        const graphData = editor.export();
+        let graph = editor.export();
+        // Записываем текст из textarea напрямую в объект графа
+        const startText = document.getElementById('start_text').value;
+        graph.drawflow.Home.data[1].html_text = startText;
 
         const res = await fetch('/api/start-bot', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token: token, graph: graphData })
+            body: JSON.stringify({ token: token, graph: graph })
         });
 
         const data = await res.json();
         alert(data.message);
     }
 </script>
-
 </body>
 </html>
