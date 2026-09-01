@@ -43,29 +43,28 @@
     const editor = new Drawflow(id);
     editor.start();
 
-    // Стартовый узел по умолчанию (/start)
-    editor.addNode('message', 0, 1, 50, 100, 'node_1', {}, `
-        <div>
+    // Начальный блок
+    editor.addNode('message', 0, 1, 50, 100, 'node_start', {}, `
+        <div class="node-content">
             <b style="color:#89b4fa">Триггер / Ответ</b><br>
-            <input type="text" id="trigger_1" placeholder="Триггер (напр: /start или привет)" value="/start">
-            <textarea id="text_1" rows="2" placeholder="Ответ бота...">Привет! Выбери действие:</textarea>
-            <input type="text" id="btn_1" placeholder="Текст кнопки">
-            <select id="type_1">
+            <input type="text" class="field-trigger" placeholder="Триггер (напр: старт или /start)" value="/start">
+            <textarea class="field-text" rows="2" placeholder="Ответ бота...">Привет! Выбери действие:</textarea>
+            <input type="text" class="field-btn" placeholder="Текст кнопки" value="проба">
+            <select class="field-type">
                 <option value="inline">С дропом (Inline-кнопка)</option>
-                <option value="reply">Без дропа (Меню внизу)</option>
+                <option value="reply" selected>Без дропа (Меню внизу)</option>
             </select>
         </div>
     `);
 
     function addMsgNode() {
-        const nodeId = Date.now();
-        editor.addNode('message', 1, 1, 360, 150, `node_${nodeId}`, {}, `
-            <div>
+        editor.addNode('message', 1, 1, 360, 150, 'node_msg', {}, `
+            <div class="node-content">
                 <b>Следующий ответ</b><br>
-                <input type="text" id="trigger_${nodeId}" placeholder="Триггер (или оставь пустым)">
-                <textarea id="text_${nodeId}" rows="2" placeholder="Ответ бота..."></textarea>
-                <input type="text" id="btn_${nodeId}" placeholder="Текст кнопки">
-                <select id="type_${nodeId}">
+                <input type="text" class="field-trigger" placeholder="Триггер (или оставь пустым)">
+                <textarea class="field-text" rows="2" placeholder="Ответ бота..."></textarea>
+                <input type="text" class="field-btn" placeholder="Текст кнопки">
+                <select class="field-type">
                     <option value="inline">С дропом (Inline-кнопка)</option>
                     <option value="reply">Без дропа (Меню внизу)</option>
                 </select>
@@ -80,19 +79,20 @@
         const rawGraph = editor.export();
         const nodesData = rawGraph.drawflow.Home.data;
 
-        // Собираем значения со всех полей ввода
-        for (const [id, node] of Object.entries(nodesData)) {
-            const rawId = id === '1' ? '1' : node.html.match(/id="text_(\d+)"/)[1];
-            
-            const trg = document.getElementById(`trigger_${rawId}`);
-            const txt = document.getElementById(`text_${rawId}`);
-            const btn = document.getElementById(`btn_${rawId}`);
-            const typ = document.getElementById(`type_${rawId}`);
+        // Корректно читаем значения DOM прямо из каждого нода Drawflow
+        for (const [nodeId, node] of Object.entries(nodesData)) {
+            const nodeEl = document.getElementById(`node-${nodeId}`);
+            if (nodeEl) {
+                const trg = nodeEl.querySelector('.field-trigger');
+                const txt = nodeEl.querySelector('.field-text');
+                const btn = nodeEl.querySelector('.field-btn');
+                const typ = nodeEl.querySelector('.field-type');
 
-            node.custom_trigger = trg ? trg.value.trim() : "";
-            node.custom_text = txt ? txt.value : "";
-            node.custom_btn = btn ? btn.value.trim() : "";
-            node.custom_type = typ ? typ.value : "inline";
+                node.custom_trigger = trg ? trg.value.trim() : "";
+                node.custom_text = txt ? txt.value : "";
+                node.custom_btn = btn ? btn.value.trim() : "";
+                node.custom_type = typ ? typ.value : "inline";
+            }
         }
 
         const res = await fetch('/api/start-bot', {
