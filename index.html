@@ -1,70 +1,91 @@
-import json
-import threading
-from flask import Flask, render_template_string, request, jsonify
-from telebot import TeleBot
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Kipouk — Конструктор Telegram-ботов</title>
+    <!-- Подключаем стили и скрипт Drawflow -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/jerosoler/Drawflow/dist/drawflow.min.css">
+    <script src="https://cdn.jsdelivr.net/gh/jerosoler/Drawflow/dist/drawflow.min.js"></script>
+    <style>
+        * { box-sizing: border-box; font-family: 'Segoe UI', sans-serif; }
+        body { margin: 0; background: #0f0f17; color: #cdd6f4; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        header { padding: 12px 20px; background: #181825; display: flex; gap: 15px; align-items: center; border-bottom: 1px solid #313244; }
+        input[type="text"] { background: #313244; border: 1px solid #45475a; padding: 10px 14px; color: #fff; border-radius: 6px; flex: 1; }
+        button { background: #89b4fa; color: #11111b; border: none; padding: 10px 18px; font-weight: bold; border-radius: 6px; cursor: pointer; }
+        button:hover { background: #b4befe; }
+        
+        main { flex: 1; display: flex; relative; }
+        .sidebar { width: 260px; background: #181825; padding: 20px; border-right: 1px solid #313244; z-index: 10; }
+        .btn-add { background: #313244; color: #89b4fa; border: 1px solid #89b4fa; width: 100%; padding: 12px; margin-bottom: 10px; text-align: left; border-radius: 6px; cursor: pointer; }
+        .btn-add:hover { background: #45475a; }
 
-app = Flask(__name__)
+        #drawflow { width: 100%; height: 100%; background: #11111b; }
+        
+        /* Кастомные стили нодов Drawflow */
+        .drawflow .drawflow-node { background: #1e1e2e; border: 2px solid #89b4fa; color: #fff; border-radius: 8px; width: 220px; padding: 10px; }
+        .drawflow .drawflow-node .input, .drawflow .drawflow-node .output { background: #89b4fa; width: 14px; height: 14px; border-radius: 50%; }
+        .drawflow .drawflow-node textarea { width: 100%; background: #313244; border: 1px solid #45475a; color: #fff; padding: 6px; border-radius: 4px; resize: vertical; }
+    </style>
+</head>
+<body>
 
-# Глобальные переменные для управления активным ботом
-current_bot_thread = None
-active_bot_instance = None
-bot_running = False
+<header>
+    <h2 style="margin: 0; color: #89b4fa;">Kipouk</h2>
+    <input type="text" id="botToken" placeholder="Вставьте токен бота (от BotFather)">
+    <button onclick="saveAndLaunch()">Запустить бота</button>
+</header>
 
-def run_bot(token, graph_data):
-    """Фоновая функция запуска бота и обработки сообщений по графу"""
-    global bot_running
-    try:
-        bot = TeleBot(token)
-        bot_running = True
-        print(f"[+] Бот успешно запущен!")
+<main>
+    <div class="sidebar">
+        <h3>Блоки</h3>
+        <button class="btn-add" onclick="addMessageNode()">+ Сообщение</button>
+    </div>
 
-        # Поиск стартового узла в схеме
-        nodes = graph_data.get("nodes", {})
-        start_node_id = graph_data.get("start_node", "node_1")
+    <div id="drawflow"></div>
+</main>
 
-        @bot.message_handler(commands=['start'])
-        def handle_start(message):
-            if start_node_id in nodes:
-                node = nodes[start_node_id]
-                bot.send_message(message.chat.id, node.get("text", "Привет!"))
+<script>
+    const id = document.getElementById("drawflow");
+    const editor = new Drawflow(id);
+    editor.start();
 
-        @bot.message_handler(func=lambda msg: True)
-        def handle_all_messages(message):
-            # Простой эхо-ответ для проверки динамической логики
-            bot.send_message(message.chat.id, f"Вы написали: {message.text}")
+    // Создаем дефолтный стартовый узел (/start)
+    editor.addNode('start', 0, 1, 50, 100, 'start', {}, `
+        <div>
+            <b style="color:#89b4fa">Старт (/start)</b><br><br>
+            <textarea class="node-text" rows="3" placeholder="Текст приветствия...">Привет! Я бот, созданный в Kipouk.</textarea>
+        </div>
+    `);
 
-        bot.infinity_polling()
-    except Exception as e:
-        print(f"[-] Ошибка работы бота: {e}")
-        bot_running = False
+    function addMessageNode() {
+        editor.addNode('message', 1, 1, 300, 150, 'message', {}, `
+            <div>
+                <b>Сообщение</b><br><br>
+                <textarea class="node-text" rows="3" placeholder="Введите текст..."></textarea>
+            </div>
+        `);
+    }
 
-@app.route('/')
-def index():
-    """Считывание index.html и отображение страницы"""
-    with open("index.html", "r", encoding="utf-8") as f:
-        html_content = f.read()
-    return render_template_string(html_content)
+    async function saveAndLaunch() {
+        const token = document.getElementById('botToken').value.trim();
+        if (!token) {
+            alert('Введите токен бота!');
+            return;
+        }
 
-@app.route('/api/start-bot', methods=['POST'])
-def start_bot():
-    """Эндпоинт для приема токена и схемы бота из конструктора"""
-    global current_bot_thread, bot_running
-    data = request.json or {}
-    token = data.get("token")
-    graph = data.get("graph")
+        // Экспортируем весь граф связей и нодов в JSON
+        const graphData = editor.export();
 
-    if not token:
-        return jsonify({"success": False, "message": "Токен не указан!"}), 400
+        const res = await fetch('/api/start-bot', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token: token, graph: graphData })
+        });
 
-    # Сохраняем в config.json для локальной отладки
-    with open("config.json", "w", encoding="utf-8") as f:
-        json.dump({"token": token, "graph": graph}, f, ensure_ascii=False, indent=2)
+        const data = await res.json();
+        alert(data.message);
+    }
+</script>
 
-    # Запускаем бота в отдельном потоке
-    thread = threading.Thread(target=run_bot, args=(token, graph), daemon=True)
-    thread.start()
-
-    return jsonify({"success": True, "message": "Бот успешно запущен!"})
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+</body>
+</html>
