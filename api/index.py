@@ -34,14 +34,20 @@ async def start_bot(request: Request):
         res = requests.get(tg_url).json()
 
         if res.get("ok"):
-            return {"success": True, "message": "Конфигурация бота обновлена!"}
+            return {"success": True, "message": "Бот обновлен и готов к работе!"}
         else:
             return JSONResponse({"success": False, "message": res.get("description")}, status_code=400)
     except Exception as e:
         return JSONResponse({"success": False, "message": str(e)}, status_code=500)
 
+def normalize_cmd(text: str) -> str:
+    """Убирает начальный слэш и приводит к нижнему регистру для точного сравнения"""
+    text = text.lower().strip()
+    if text.startswith("/"):
+        text = text[1:]
+    return text
+
 def build_keyboard(btn_text, btn_type, callback_id=""):
-    """Формирует структурированную клавиатуру: Inline (с дропом) или Reply (без дропа)"""
     if not btn_text:
         return None
 
@@ -49,7 +55,7 @@ def build_keyboard(btn_text, btn_type, callback_id=""):
         return {
             "inline_keyboard": [[{"text": btn_text, "callback_data": f"btn_{callback_id}"}]]
         }
-    else:  # reply (обычная клавиатура внизу)
+    else:  # reply
         return {
             "keyboard": [[{"text": btn_text}]],
             "resize_keyboard": True
@@ -67,7 +73,6 @@ async def handle_webhook(token: str, request: Request):
         user_input = None
         clicked_target_node = None
 
-        # Разбор входных данных (сообщение или клик на Inline-кнопку)
         if "message" in data:
             chat_id = data["message"]["chat"]["id"]
             user_input = data["message"].get("text", "").strip()
@@ -80,34 +85,35 @@ async def handle_webhook(token: str, request: Request):
         if chat_id and drawflow_data:
             target_node = None
 
-            # 1. Если был клик по Inline-кнопке (с дропом) — переходим на целевой узел
+            # 1. Если клик по Inline-кнопке
             if clicked_target_node and clicked_target_node in drawflow_data:
                 target_node = drawflow_data[clicked_target_node]
 
-            # 2. Иначе ищем узел по тексту триггера или по нажатой Reply-кнопке (без дропа)
-            if not target_node:
-                for node_id, node in drawflow_data.items():
-                    trg = node.get("custom_trigger", "").lower()
-                    btn = node.get("custom_btn", "").lower()
+            # 2. Поиск узла по триггеру или по нажатой Reply-кнопке
+            if not target_node and user_input:
+                clean_input = normalize_cmd(user_input)
 
-                    # Совпадение по названию триггера или тексту обычной кнопки
-                    if (trg and user_input.lower() == trg) or (btn and user_input.lower() == btn):
-                        # Берём узел, соединённый с текущим, если есть выходное соединение
+                for node_id, node in drawflow_data.items():
+                    trg = normalize_cmd(node.get("custom_trigger", ""))
+                    btn = normalize_cmd(node.get("custom_btn", ""))
+
+                    # Если ввод совпал с триггером или с кнопкой текущего блока
+                    if (trg and clean_input == trg) or (btn and clean_input == btn):
+                        # Проверяем, есть ли следующее соединение
                         outs = node.get("outputs", {}).get("output_1", {}).get("connections", [])
-                        if outs:
+                        if outs and clean_input == btn:
                             next_id = outs[0].get("node")
-                            target_node = drawflow_data.get(next_id)
+                            target_node = drawflow_data.get(next_id, node)
                         else:
                             target_node = node
                         break
 
-            # 3. Отправка ответа
+            # 3. Отправляем ответ
             if target_node:
-                text = target_node.get("custom_text", "")
+                text = target_node.get("custom_text", "...")
                 btn_text = target_node.get("custom_btn", "")
                 btn_type = target_node.get("custom_type", "inline")
 
-                # Определяем, куда вести при клике на Inline-кнопку
                 next_node_id = ""
                 outs = target_node.get("outputs", {}).get("output_1", {}).get("connections", [])
                 if outs:
