@@ -10,7 +10,6 @@
         body { margin: 0; background: #0f0f17; color: #fff; display: flex; flex-direction: column; height: 100vh; }
         header { padding: 12px 20px; background: #181825; display: flex; gap: 15px; border-bottom: 1px solid #313244; }
         input[type="text"], select, textarea { background: #313244; border: 1px solid #45475a; padding: 6px; color: #fff; border-radius: 6px; width: 100%; margin-top: 4px; }
-        input[type="file"] { margin-top: 6px; font-size: 12px; color: #a6adc8; width: 100%; }
         button { background: #89b4fa; border: none; padding: 10px 18px; font-weight: bold; border-radius: 6px; cursor: pointer; color: #11111b; }
         button:hover { background: #b4befe; }
         main { flex: 1; display: flex; }
@@ -98,9 +97,9 @@
     function addMediaNode(x = 380, y = 460) {
         editor.addNode('media', 1, 1, x, y, 'media-node', {}, `
             <div class="node-content" data-type="media">
-                <b style="color:#f9e2af">🖼️ Фото / Файл с ПК</b>
-                <label>Выберите файл с устройства:</label>
-                <input type="file" class="field-file">
+                <b style="color:#f9e2af">🖼️ Фото / Файл по ссылке</b>
+                <label>Прямая ссылка на фото/файл:</label>
+                <input type="text" class="field-url" placeholder="https://site.com/image.png">
                 
                 <label>Тип отправки:</label>
                 <select class="field-media-type">
@@ -117,9 +116,6 @@
     async function deployBot() {
         const token = document.getElementById('botToken').value.trim();
         if (!token) return alert('Укажите токен!');
-
-        const formData = new FormData();
-        formData.append('token', token);
 
         const rawGraph = editor.export();
         const nodesData = rawGraph.drawflow.Home.data;
@@ -138,7 +134,7 @@
                 const btn = nodeEl.querySelector('.field-btn');
                 const typ = nodeEl.querySelector('.field-type');
                 const mediaType = nodeEl.querySelector('.field-media-type');
-                const fileInput = nodeEl.querySelector('.field-file');
+                const mediaUrl = nodeEl.querySelector('.field-url');
 
                 node.custom_trigger = trg ? trg.value.trim() : "";
                 node.custom_text = txt ? txt.value : "";
@@ -146,24 +142,22 @@
                 node.custom_btn = btn ? btn.value.trim() : "";
                 node.custom_type = typ ? typ.value : "inline";
                 node.custom_media_type = mediaType ? mediaType.value : "photo";
-
-                // Если прикреплен файл — отправляем его в FormData с именем ключа file_<nodeId>
-                if (fileInput && fileInput.files[0]) {
-                    formData.append(`file_${nodeId}`, fileInput.files[0]);
-                    node.has_file = true;
-                }
+                node.custom_media_url = mediaUrl ? mediaUrl.value.trim() : "";
             }
         }
 
-        formData.append('graph', JSON.stringify(rawGraph));
+        try {
+            const res = await fetch('/api/start-bot', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token: token, graph: rawGraph })
+            });
 
-        const res = await fetch('/api/start-bot', {
-            method: 'POST',
-            body: formData
-        });
-
-        const data = await res.json();
-        alert(data.message);
+            const data = await res.json();
+            alert(data.message);
+        } catch (e) {
+            alert('Ошибка сервера: ' + e.message);
+        }
     }
 </script>
 
