@@ -98,12 +98,12 @@
     function addMediaNode(x = 380, y = 460) {
         editor.addNode('media', 1, 1, x, y, 'media-node', {}, `
             <div class="node-content" data-type="media">
-                <b style="color:#f9e2af">🖼️ Файл с ПК / Ссылка</b>
-                <label>Выберите файл с ПК (до 3 МБ):</label>
+                <b style="color:#f9e2af">🖼️ Файл с ПК / Ссылка / File ID</b>
+                <label>Выберите файл с ПК:</label>
                 <input type="file" class="field-file">
                 
-                <label>ИЛИ вставьте ссылку:</label>
-                <input type="text" class="field-url" placeholder="https://...">
+                <label>ИЛИ вставьте ссылку / File ID:</label>
+                <input type="text" class="field-url" placeholder="https://... или File ID">
 
                 <label>Тип отправки:</label>
                 <select class="field-media-type">
@@ -117,11 +117,47 @@
         `);
     }
 
-    // Вспомогательная функция чтения файла в Base64
-    function readFileAsBase64(file) {
+    // Автоматическое сжатие изображений перед отправкой
+    function processAndCompressFile(file) {
         return new Promise((resolve, reject) => {
+            if (!file.type.startsWith('image/')) {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+                return;
+            }
+
             const reader = new FileReader();
-            reader.onload = () => resolve(reader.result);
+            reader.onload = (e) => {
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    let width = img.width;
+                    let height = img.height;
+
+                    const maxDimension = 1600;
+                    if (width > maxDimension || height > maxDimension) {
+                        if (width > height) {
+                            height = Math.round((height * maxDimension) / width);
+                            width = maxDimension;
+                        } else {
+                            width = Math.round((width * maxDimension) / height);
+                            height = maxDimension;
+                        }
+                    }
+
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+
+                    const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
+                    resolve(compressedBase64);
+                };
+                img.onerror = reject;
+                img.src = e.target.result;
+            };
             reader.onerror = reject;
             reader.readAsDataURL(file);
         });
@@ -159,14 +195,10 @@
                 node.custom_media_type = mediaType ? mediaType.value : "photo";
                 node.custom_media_url = mediaUrl ? mediaUrl.value.trim() : "";
 
-                // Если выбран файл на устройстве:
                 if (fileInput && fileInput.files[0]) {
                     const file = fileInput.files[0];
-                    if (file.size > 3.5 * 1024 * 1024) {
-                        return alert(`Файл "${file.name}" превышает 3.5 МБ! Vercel не сможет его принять. Загрузите файл меньшего размера или используйте ссылку.`);
-                    }
-                    node.custom_file_base64 = await readFileAsBase64(file);
-                    node.custom_file_name = file.name;
+                    node.custom_file_base64 = await processAndCompressFile(file);
+                    node.custom_file_name = file.name.replace(/\.[^/.]+$/, "") + ".jpg";
                 }
             }
         }
@@ -179,9 +211,13 @@
             });
 
             const data = await res.json();
-            alert(data.message);
+            if (res.ok) {
+                alert(data.message);
+            } else {
+                alert('Ошибка: ' + (data.message || 'Неизвестная ошибка'));
+            }
         } catch (e) {
-            alert('Ошибка сервера: ' + e.message);
+            alert('Ошибка сервера при загрузке. Попробуйте еще раз.');
         }
     }
 </script>
