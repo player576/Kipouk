@@ -10,6 +10,7 @@
         body { margin: 0; background: #0f0f17; color: #fff; display: flex; flex-direction: column; height: 100vh; }
         header { padding: 12px 20px; background: #181825; display: flex; gap: 15px; border-bottom: 1px solid #313244; }
         input[type="text"], select, textarea { background: #313244; border: 1px solid #45475a; padding: 6px; color: #fff; border-radius: 6px; width: 100%; margin-top: 4px; }
+        input[type="file"] { margin-top: 6px; font-size: 12px; color: #a6adc8; width: 100%; }
         button { background: #89b4fa; border: none; padding: 10px 18px; font-weight: bold; border-radius: 6px; cursor: pointer; color: #11111b; }
         button:hover { background: #b4befe; }
         main { flex: 1; display: flex; }
@@ -97,10 +98,13 @@
     function addMediaNode(x = 380, y = 460) {
         editor.addNode('media', 1, 1, x, y, 'media-node', {}, `
             <div class="node-content" data-type="media">
-                <b style="color:#f9e2af">🖼️ Фото / Файл по ссылке</b>
-                <label>Прямая ссылка на фото/файл:</label>
-                <input type="text" class="field-url" placeholder="https://site.com/image.png">
+                <b style="color:#f9e2af">🖼️ Файл с ПК / Ссылка</b>
+                <label>Выберите файл с ПК (до 3 МБ):</label>
+                <input type="file" class="field-file">
                 
+                <label>ИЛИ вставьте ссылку:</label>
+                <input type="text" class="field-url" placeholder="https://...">
+
                 <label>Тип отправки:</label>
                 <select class="field-media-type">
                     <option value="photo">Фотография</option>
@@ -111,6 +115,16 @@
                 <textarea class="field-text" rows="2" placeholder="Лови файл!"></textarea>
             </div>
         `);
+    }
+
+    // Вспомогательная функция чтения файла в Base64
+    function readFileAsBase64(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
     }
 
     async function deployBot() {
@@ -135,6 +149,7 @@
                 const typ = nodeEl.querySelector('.field-type');
                 const mediaType = nodeEl.querySelector('.field-media-type');
                 const mediaUrl = nodeEl.querySelector('.field-url');
+                const fileInput = nodeEl.querySelector('.field-file');
 
                 node.custom_trigger = trg ? trg.value.trim() : "";
                 node.custom_text = txt ? txt.value : "";
@@ -143,6 +158,16 @@
                 node.custom_type = typ ? typ.value : "inline";
                 node.custom_media_type = mediaType ? mediaType.value : "photo";
                 node.custom_media_url = mediaUrl ? mediaUrl.value.trim() : "";
+
+                // Если выбран файл на устройстве:
+                if (fileInput && fileInput.files[0]) {
+                    const file = fileInput.files[0];
+                    if (file.size > 3.5 * 1024 * 1024) {
+                        return alert(`Файл "${file.name}" превышает 3.5 МБ! Vercel не сможет его принять. Загрузите файл меньшего размера или используйте ссылку.`);
+                    }
+                    node.custom_file_base64 = await readFileAsBase64(file);
+                    node.custom_file_name = file.name;
+                }
             }
         }
 
