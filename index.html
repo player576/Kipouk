@@ -10,6 +10,7 @@
         body { margin: 0; background: #0f0f17; color: #fff; display: flex; flex-direction: column; height: 100vh; }
         header { padding: 12px 20px; background: #181825; display: flex; gap: 15px; border-bottom: 1px solid #313244; }
         input[type="text"], select, textarea { background: #313244; border: 1px solid #45475a; padding: 6px; color: #fff; border-radius: 6px; width: 100%; margin-top: 4px; }
+        input[type="file"] { margin-top: 6px; font-size: 12px; color: #a6adc8; width: 100%; }
         button { background: #89b4fa; border: none; padding: 10px 18px; font-weight: bold; border-radius: 6px; cursor: pointer; color: #11111b; }
         button:hover { background: #b4befe; }
         main { flex: 1; display: flex; }
@@ -18,7 +19,7 @@
         .btn-add:hover { background: #45475a; }
         #drawflow { width: 100%; height: 100%; background: #11111b; }
         
-        .drawflow .drawflow-node { background: #1e1e2e; border: 2px solid #89b4fa; color: #fff; border-radius: 8px; width: 260px; padding: 12px; }
+        .drawflow .drawflow-node { background: #1e1e2e; border: 2px solid #89b4fa; color: #fff; border-radius: 8px; width: 270px; padding: 12px; }
         .drawflow .drawflow-node.trigger-node { border-color: #f38ba8; }
         .drawflow .drawflow-node.input-node { border-color: #a6e3a1; }
         .drawflow .drawflow-node.media-node { border-color: #f9e2af; }
@@ -50,7 +51,6 @@
     const editor = new Drawflow(id);
     editor.start();
 
-    // Стартовый узел по умолчанию
     addTriggerNode(50, 100, "/start");
 
     function addTriggerNode(x = 100, y = 100, defaultVal = "") {
@@ -58,7 +58,7 @@
             <div class="node-content" data-type="trigger">
                 <b style="color:#f38ba8">⚡ Триггер (Команда)</b>
                 <label>Команда или слово:</label>
-                <input type="text" class="field-trigger" placeholder="/start или привет" value="${defaultVal}">
+                <input type="text" class="field-trigger" placeholder="/start" value="${defaultVal}">
             </div>
         `);
     }
@@ -68,7 +68,7 @@
             <div class="node-content" data-type="message">
                 <b style="color:#89b4fa">💬 Сообщение</b>
                 <label>Текст (можно {имя}):</label>
-                <textarea class="field-text" rows="2" placeholder="Привет, {имя}!"></textarea>
+                <textarea class="field-text" rows="2" placeholder="Привет!"></textarea>
                 
                 <label>Кнопки (через запятую):</label>
                 <input type="text" class="field-btn" placeholder="Кнопка 1, Кнопка 2">
@@ -89,8 +89,8 @@
                 <label>Вопрос пользователю:</label>
                 <textarea class="field-text" rows="2" placeholder="Как тебя зовут?"></textarea>
                 
-                <label>Имя переменной для сохранения:</label>
-                <input type="text" class="field-var" placeholder="например: имя" value="имя">
+                <label>Имя переменной:</label>
+                <input type="text" class="field-var" placeholder="имя" value="имя">
             </div>
         `);
     }
@@ -98,18 +98,18 @@
     function addMediaNode(x = 380, y = 460) {
         editor.addNode('media', 1, 1, x, y, 'media-node', {}, `
             <div class="node-content" data-type="media">
-                <b style="color:#f9e2af">🖼️ Фото / Файл</b>
-                <label>Ссылка на файл/фото (URL):</label>
-                <input type="text" class="field-url" placeholder="https://site.com/image.jpg">
+                <b style="color:#f9e2af">🖼️ Фото / Файл с ПК</b>
+                <label>Выберите файл с устройства:</label>
+                <input type="file" class="field-file">
                 
-                <label>Тип файла:</label>
+                <label>Тип отправки:</label>
                 <select class="field-media-type">
                     <option value="photo">Фотография</option>
                     <option value="document">Документ / Файл</option>
                 </select>
 
-                <label>Подпись к медиа (можно {имя}):</label>
-                <textarea class="field-text" rows="2" placeholder="Вот твое фото, {имя}!"></textarea>
+                <label>Подпись (можно {имя}):</label>
+                <textarea class="field-text" rows="2" placeholder="Лови файл!"></textarea>
             </div>
         `);
     }
@@ -117,6 +117,9 @@
     async function deployBot() {
         const token = document.getElementById('botToken').value.trim();
         if (!token) return alert('Укажите токен!');
+
+        const formData = new FormData();
+        formData.append('token', token);
 
         const rawGraph = editor.export();
         const nodesData = rawGraph.drawflow.Home.data;
@@ -134,23 +137,29 @@
                 const varName = nodeEl.querySelector('.field-var');
                 const btn = nodeEl.querySelector('.field-btn');
                 const typ = nodeEl.querySelector('.field-type');
-                const url = nodeEl.querySelector('.field-url');
                 const mediaType = nodeEl.querySelector('.field-media-type');
+                const fileInput = nodeEl.querySelector('.field-file');
 
                 node.custom_trigger = trg ? trg.value.trim() : "";
                 node.custom_text = txt ? txt.value : "";
                 node.custom_var = varName ? varName.value.trim() : "";
                 node.custom_btn = btn ? btn.value.trim() : "";
                 node.custom_type = typ ? typ.value : "inline";
-                node.custom_url = url ? url.value.trim() : "";
                 node.custom_media_type = mediaType ? mediaType.value : "photo";
+
+                // Если прикреплен файл — отправляем его в FormData с именем ключа file_<nodeId>
+                if (fileInput && fileInput.files[0]) {
+                    formData.append(`file_${nodeId}`, fileInput.files[0]);
+                    node.has_file = true;
+                }
             }
         }
 
+        formData.append('graph', JSON.stringify(rawGraph));
+
         const res = await fetch('/api/start-bot', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token: token, graph: rawGraph })
+            body: formData
         });
 
         const data = await res.json();
