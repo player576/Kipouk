@@ -98,8 +98,8 @@
     function addMediaNode(x = 380, y = 460) {
         editor.addNode('media', 1, 1, x, y, 'media-node', {}, `
             <div class="node-content" data-type="media">
-                <b style="color:#f9e2af">🖼️ Файл с ПК / Ссылка / File ID</b>
-                <label>Выберите файл с ПК:</label>
+                <b style="color:#f9e2af">🖼️ Файл с ПК / File ID</b>
+                <label>Выберите любой файл с ПК (.jar, .exe, .png и др.):</label>
                 <input type="file" class="field-file">
                 
                 <label>ИЛИ вставьте ссылку / File ID:</label>
@@ -107,8 +107,8 @@
 
                 <label>Тип отправки:</label>
                 <select class="field-media-type">
+                    <option value="document">Документ / Файл (.jar, .exe, .zip)</option>
                     <option value="photo">Фотография</option>
-                    <option value="document">Документ / Файл</option>
                 </select>
 
                 <label>Подпись (можно {имя}):</label>
@@ -117,50 +117,43 @@
         `);
     }
 
-    // Автоматическое сжатие изображений перед отправкой
-    function processAndCompressFile(file) {
-        return new Promise((resolve, reject) => {
-            if (!file.type.startsWith('image/')) {
-                const reader = new FileReader();
-                reader.onload = () => resolve(reader.result);
-                reader.onerror = reject;
-                reader.readAsDataURL(file);
-                return;
-            }
+    // Загрузка файла напрямую на сервера Telegram для обхода лимитов Vercel
+    async function uploadToTelegram(token, file, mediaType) {
+        const formData = new FormData();
+        const endpoint = mediaType === 'photo' ? 'sendPhoto' : 'sendDocument';
+        const fieldName = mediaType === 'photo' ? 'photo' : 'document';
 
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                const img = new Image();
-                img.onload = () => {
-                    const canvas = document.createElement('canvas');
-                    let width = img.width;
-                    let height = img.height;
+        // Берем chat_id из первого доступного обновления или используем универсальный ID
+        const updatesRes = await fetch(`https://api.telegram.org/bot${token}/getUpdates`);
+        const updatesData = await updatesRes.json();
+        
+        let targetChatId = null;
+        if (updatesData.ok && updatesData.result.length > 0) {
+            targetChatId = updatesData.result[0].message?.chat?.id;
+        }
 
-                    const maxDimension = 1600;
-                    if (width > maxDimension || height > maxDimension) {
-                        if (width > height) {
-                            height = Math.round((height * maxDimension) / width);
-                            width = maxDimension;
-                        } else {
-                            width = Math.round((width * maxDimension) / height);
-                            height = maxDimension;
-                        }
-                    }
+        if (!targetChatId) {
+            throw new Error("Отправьте боту хотя бы одно сообщение в Telegram перед запуском!");
+        }
 
-                    canvas.width = width;
-                    canvas.height = height;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0, width, height);
+        formData.append('chat_id', targetChatId);
+        formData.append(fieldName, file);
 
-                    const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
-                    resolve(compressedBase64);
-                };
-                img.onerror = reject;
-                img.src = e.target.result;
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
+        const res = await fetch(`https://api.telegram.org/bot${token}/${endpoint}`, {
+            method: 'POST',
+            body: formData
         });
+        
+        const data = await res.json();
+        if (data.ok) {
+            if (mediaType === 'photo') {
+                return data.result.photo[data.result.photo.length - 1].file_id;
+            } else {
+                return data.result.document.file_id;
+            }
+        } else {
+            throw new Error(data.description || "Ошибка загрузки файла в Telegram");
+        }
     }
 
     async function deployBot() {
@@ -192,14 +185,22 @@
                 node.custom_var = varName ? varName.value.trim() : "";
                 node.custom_btn = btn ? btn.value.trim() : "";
                 node.custom_type = typ ? typ.value : "inline";
-                node.custom_media_type = mediaType ? mediaType.value : "photo";
-                node.custom_media_url = mediaUrl ? mediaUrl.value.trim() : "";
+                
+                const mType = mediaType ? mediaType.value : "document";
+                node.custom_media_type = mType;
+                
+                let finalMediaUrl = mediaUrl ? mediaUrl.value.trim() : "";
 
                 if (fileInput && fileInput.files[0]) {
                     const file = fileInput.files[0];
-                    node.custom_file_base64 = await processAndCompressFile(file);
-                    node.custom_file_name = file.name.replace(/\.[^/.]+$/, "") + ".jpg";
+                    try {
+                        finalMediaUrl = await uploadToTelegram(token, file, mType);
+                    } catch (err) {
+                        return alert(`Ошибка файла "${file.name}": ` + err.message);
+                    }
                 }
+
+                node.custom_media_url = finalMediaUrl;
             }
         }
 
@@ -212,12 +213,12 @@
 
             const data = await res.json();
             if (res.ok) {
-                alert(data.message);
+                alert("Бот успешно запущен!");
             } else {
                 alert('Ошибка: ' + (data.message || 'Неизвестная ошибка'));
             }
         } catch (e) {
-            alert('Ошибка сервера при загрузке. Попробуйте еще раз.');
+            alert('Ошибка сервера при сохранении бота');
         }
     }
 </script>
