@@ -1,5 +1,6 @@
 import os
 import json
+import re
 import requests
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -8,7 +9,7 @@ app = FastAPI()
 
 BOT_CONFIGS = {}
 USER_STATES = {}  # { chat_id: "waiting_node_id" }
-USER_DATA = {}    # { chat_id: { "имя": "Алексей" } }
+USER_DATA = {}    # { chat_id: { "имя": "Данил" } }
 
 @app.get("/", response_class=HTMLResponse)
 async def read_index():
@@ -67,8 +68,10 @@ def build_keyboard(btn_raw, btn_type, callback_id=""):
         return {"keyboard": reply_keyboard, "resize_keyboard": True}
 
 def replace_vars(text: str, user_vars: dict) -> str:
+    """Подставляет переменные без учета регистра ({Имя}, {имя}, {ИМЯ})"""
     for var_name, var_val in user_vars.items():
-        text = text.replace(f"{{{var_name}}}", str(var_val))
+        pattern = re.compile(rf"\{{{var_name}\}}", re.IGNORECASE)
+        text = pattern.sub(str(var_val), text)
     return text
 
 def get_next_node_id(node):
@@ -78,23 +81,22 @@ def get_next_node_id(node):
     return None
 
 def process_node_execution(token, chat_id, node_id, drawflow_data):
-    """Рекурсивно или пошагово выполняет блоки"""
     node = drawflow_data.get(node_id)
     if not node:
         return
 
     b_type = node.get("block_type", "message")
-    send_url = f"https://api.telegram.org/bot{token}/sendMessage"
-
-    # 1. Если это триггер — сразу идем к присоединенному блоку
+    
+    # 1. Блок Триггера
     if b_type == "trigger":
         next_id = get_next_node_id(node)
         if next_id:
             process_node_execution(token, chat_id, next_id, drawflow_data)
         return
 
-    # 2. Если это Блок сообщения
+    # 2. Блок Текстового сообщения
     elif b_type == "message":
+        send_url = f"https://api.telegram.org/bot{token}/sendMessage"
         raw_text = node.get("custom_text", "")
         final_text = replace_vars(raw_text, USER_DATA.get(chat_id, {}))
         
@@ -109,16 +111,40 @@ def process_node_execution(token, chat_id, node_id, drawflow_data):
 
         requests.post(send_url, json=payload)
 
-    # 3. Если это Блок ввода переменной
+    # 3. Блок Ввода переменной
     elif b_type == "input_var":
+        send_url = f"https://api.telegram.org/bot{token}/sendMessage"
         raw_text = node.get("custom_text", "Введите значение:")
         final_text = replace_vars(raw_text, USER_DATA.get(chat_id, {}))
 
-        # Сохраняем пользователя в состояние ожидания ввода для ДАННОГО узла
         USER_STATES[chat_id] = node_id
 
         payload = {"chat_id": chat_id, "text": final_text}
         requests.post(send_url, json=payload)
+
+    # 4. Блок Фото / Файла
+    elif b_type == "media":
+        media_url = node.get("custom_url", "")
+        media_type = node.get("custom_media_type", "photo")
+        raw_caption = node.get("custom_text", "")
+        caption = replace_vars(raw_caption, USER_DATA.get(chat_id, {}))
+
+        if media_url:
+            endpoint = "sendPhoto" if media_type == "photo" else "sendDocument"
+            field_name = "photo" if media_type == "photo" else "document"
+            send_url = f"https://api.telegram.org/bot{token}/{endpoint}"
+
+            payload = {
+                "chat_id": chat_id,
+                field_name: media_url,
+                "caption": caption
+            }
+            requests.post(send_url, json=payload)
+
+        # Если после отправки фото цепочка продолжается
+        next_id = get_next_node_id(node)
+        if next_id:
+            process_node_execution(token, chat_id, next_id, drawflow_data)
 
 @app.post("/api/webhook/{token}")
 async def handle_webhook(token: str, request: Request):
@@ -150,7 +176,7 @@ async def handle_webhook(token: str, request: Request):
             if clicked_target_node:
                 process_node_execution(token, chat_id, clicked_target_node, drawflow_data)
 
-            # Сценарий B: Пользователь ответил на "Ввод переменной"
+            # Сценарий B: Ввод значения переменной
             elif chat_id in USER_STATES and user_input:
                 waiting_node_id = USER_STATES.pop(chat_id)
                 current_node = drawflow_data.get(waiting_node_id)
@@ -160,26 +186,23 @@ async def handle_webhook(token: str, request: Request):
                     if var_name:
                         USER_DATA[chat_id][var_name] = user_input
 
-                    # После ввода идем к следующему соединенному блоку
                     next_id = get_next_node_id(current_node)
                     if next_id:
                         process_node_execution(token, chat_id, next_id, drawflow_data)
 
-            # Сценарий C: Поиск по блокам Триггеров или Кнопкам
+            # Сценарий C: Вызов триггера или нажатие кнопки
             elif user_input:
                 clean_input = normalize_cmd(user_input)
 
                 for node_id, node in drawflow_data.items():
                     b_type = node.get("block_type", "")
                     
-                    # Ищем совпадение в блоке-триггере
                     if b_type == "trigger":
                         trg = normalize_cmd(node.get("custom_trigger", ""))
                         if trg and clean_input == trg:
                             process_node_execution(token, chat_id, node_id, drawflow_data)
                             break
                     
-                    # Ищем совпадение по нажатию обычной (Reply) кнопки в сообщениях
                     elif b_type == "message":
                         btns = [normalize_cmd(b) for b in node.get("custom_btn", "").split(",") if b.strip()]
                         if clean_input in btns:
