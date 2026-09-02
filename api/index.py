@@ -34,7 +34,6 @@ async def start_bot(payload: StartBotPayload, request: Request):
         token = payload.token
         graph = payload.graph
 
-        # Сохраняем локальные файлы из Base64 во временную папку
         nodes = graph.get("drawflow", {}).get("Home", {}).get("data", {})
         for node_id, node in nodes.items():
             b64_data = node.get("custom_file_base64")
@@ -146,14 +145,12 @@ def process_node_execution(token, chat_id, node_id, drawflow_data):
         field_name = "photo" if media_type == "photo" else "document"
         send_url = f"https://api.telegram.org/bot{token}/{endpoint}"
 
-        # 1. Загрузка через сохраненный локальный файл с устройства
         if filepath and os.path.exists(filepath):
             with open(filepath, "rb") as f:
                 files = {field_name: f}
                 data = {"chat_id": chat_id, "caption": caption}
                 requests.post(send_url, data=data, files=files)
 
-        # 2. Или загрузка по прямой ссылке
         elif media_url:
             payload = {
                 "chat_id": chat_id,
