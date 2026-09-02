@@ -2,18 +2,19 @@ import os
 import json
 import re
 import requests
-from fastapi import FastAPI, Request, Form, UploadFile, File
+from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
-from typing import List, Optional
+from pydantic import BaseModel
 
 app = FastAPI()
-
-UPLOAD_DIR = "/tmp/uploads"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 BOT_CONFIGS = {}
 USER_STATES = {}
 USER_DATA = {}
+
+class StartBotPayload(BaseModel):
+    token: str
+    graph: dict
 
 @app.get("/", response_class=HTMLResponse)
 async def read_index():
@@ -24,31 +25,10 @@ async def read_index():
         return f"<h1>Ошибка: {str(e)}</h1>"
 
 @app.post("/api/start-bot")
-async def start_bot(request: Request):
+async def start_bot(payload: StartBotPayload, request: Request):
     try:
-        form = await request.form()
-        token = form.get("token")
-        graph_raw = form.get("graph")
-
-        if not token or not graph_raw:
-            return JSONResponse({"success": False, "message": "Токен или схема не переданы!"}, status_code=400)
-
-        graph = json.loads(graph_raw)
-
-        # Сохраняем загруженные файлы из формы
-        for key in form.keys():
-            if key.startswith("file_"):
-                file_obj = form[key]
-                if isinstance(file_obj, UploadFile):
-                    filename = f"{token}_{key}_{file_obj.filename}"
-                    filepath = os.path.join(UPLOAD_DIR, filename)
-                    with open(filepath, "wb") as f:
-                        f.write(await file_obj.read())
-                    
-                    node_id = key.replace("file_", "")
-                    nodes = graph.get("drawflow", {}).get("Home", {}).get("data", {})
-                    if node_id in nodes:
-                        nodes[node_id]["local_file_path"] = filepath
+        token = payload.token
+        graph = payload.graph
 
         BOT_CONFIGS[token] = graph
 
@@ -136,22 +116,23 @@ def process_node_execution(token, chat_id, node_id, drawflow_data):
         payload = {"chat_id": chat_id, "text": final_text}
         requests.post(send_url, json=payload)
 
-    # Отправка файла с устройства
     elif b_type == "media":
-        filepath = node.get("local_file_path")
+        media_url = node.get("custom_media_url", "")
         media_type = node.get("custom_media_type", "photo")
         raw_caption = node.get("custom_text", "")
         caption = replace_vars(raw_caption, USER_DATA.get(chat_id, {}))
 
-        if filepath and os.path.exists(filepath):
+        if media_url:
             endpoint = "sendPhoto" if media_type == "photo" else "sendDocument"
             field_name = "photo" if media_type == "photo" else "document"
             send_url = f"https://api.telegram.org/bot{token}/{endpoint}"
 
-            with open(filepath, "rb") as f:
-                files = {field_name: f}
-                data = {"chat_id": chat_id, "caption": caption}
-                requests.post(send_url, data=data, files=files)
+            payload = {
+                "chat_id": chat_id,
+                field_name: media_url,
+                "caption": caption
+            }
+            requests.post(send_url, json=payload)
 
         next_id = get_next_node_id(node)
         if next_id:
