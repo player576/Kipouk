@@ -1,12 +1,16 @@
 import os
 import json
 import re
+import base64
 import requests
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
 app = FastAPI()
+
+UPLOAD_DIR = "/tmp/uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 BOT_CONFIGS = {}
 USER_STATES = {}
@@ -29,6 +33,21 @@ async def start_bot(payload: StartBotPayload, request: Request):
     try:
         token = payload.token
         graph = payload.graph
+
+        # Сохраняем локальные файлы из Base64 во временную папку
+        nodes = graph.get("drawflow", {}).get("Home", {}).get("data", {})
+        for node_id, node in nodes.items():
+            b64_data = node.get("custom_file_base64")
+            file_name = node.get("custom_file_name", "file.dat")
+            if b64_data:
+                if "," in b64_data:
+                    b64_data = b64_data.split(",")[1]
+                
+                filepath = os.path.join(UPLOAD_DIR, f"{token}_{node_id}_{file_name}")
+                with open(filepath, "wb") as f:
+                    f.write(base64.b64decode(b64_data))
+                
+                node["local_file_path"] = filepath
 
         BOT_CONFIGS[token] = graph
 
@@ -117,16 +136,25 @@ def process_node_execution(token, chat_id, node_id, drawflow_data):
         requests.post(send_url, json=payload)
 
     elif b_type == "media":
+        filepath = node.get("local_file_path")
         media_url = node.get("custom_media_url", "")
         media_type = node.get("custom_media_type", "photo")
         raw_caption = node.get("custom_text", "")
         caption = replace_vars(raw_caption, USER_DATA.get(chat_id, {}))
 
-        if media_url:
-            endpoint = "sendPhoto" if media_type == "photo" else "sendDocument"
-            field_name = "photo" if media_type == "photo" else "document"
-            send_url = f"https://api.telegram.org/bot{token}/{endpoint}"
+        endpoint = "sendPhoto" if media_type == "photo" else "sendDocument"
+        field_name = "photo" if media_type == "photo" else "document"
+        send_url = f"https://api.telegram.org/bot{token}/{endpoint}"
 
+        # 1. Загрузка через сохраненный локальный файл с устройства
+        if filepath and os.path.exists(filepath):
+            with open(filepath, "rb") as f:
+                files = {field_name: f}
+                data = {"chat_id": chat_id, "caption": caption}
+                requests.post(send_url, data=data, files=files)
+
+        # 2. Или загрузка по прямой ссылке
+        elif media_url:
             payload = {
                 "chat_id": chat_id,
                 field_name: media_url,
