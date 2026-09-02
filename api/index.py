@@ -2,14 +2,18 @@ import os
 import json
 import re
 import requests
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Form, UploadFile, File
 from fastapi.responses import HTMLResponse, JSONResponse
+from typing import List, Optional
 
 app = FastAPI()
 
+UPLOAD_DIR = "uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
 BOT_CONFIGS = {}
-USER_STATES = {}  # { chat_id: "waiting_node_id" }
-USER_DATA = {}    # { chat_id: { "имя": "Данил" } }
+USER_STATES = {}
+USER_DATA = {}
 
 @app.get("/", response_class=HTMLResponse)
 async def read_index():
@@ -22,12 +26,29 @@ async def read_index():
 @app.post("/api/start-bot")
 async def start_bot(request: Request):
     try:
-        data = await request.json()
-        token = data.get("token")
-        graph = data.get("graph")
+        form = await request.form()
+        token = form.get("token")
+        graph_raw = form.get("graph")
 
-        if not token:
-            return JSONResponse({"success": False, "message": "Токен не указан!"}, status_code=400)
+        if not token or not graph_raw:
+            return JSONResponse({"success": False, "message": "Токен или схема не переданы!"}, status_code=400)
+
+        graph = json.loads(graph_raw)
+
+        # Сохраняем загруженные файлы из формы
+        for key in form.keys():
+            if key.startswith("file_"):
+                file_obj = form[key]
+                if isinstance(file_obj, UploadFile):
+                    filename = f"{token}_{key}_{file_obj.filename}"
+                    filepath = os.path.join(UPLOAD_DIR, filename)
+                    with open(filepath, "wb") as f:
+                        f.write(await file_obj.read())
+                    
+                    node_id = key.replace("file_", "")
+                    nodes = graph.get("drawflow", {}).get("Home", {}).get("data", {})
+                    if node_id in nodes:
+                        nodes[node_id]["local_file_path"] = filepath
 
         BOT_CONFIGS[token] = graph
 
@@ -53,22 +74,18 @@ def normalize_cmd(text: str) -> str:
 def build_keyboard(btn_raw, btn_type, callback_id=""):
     if not btn_raw:
         return None
-
     buttons = [b.strip() for b in btn_raw.split(",") if b.strip()]
     if not buttons:
         return None
 
     if btn_type == "inline":
-        inline_keyboard = []
-        for idx, btn_text in enumerate(buttons):
-            inline_keyboard.append([{"text": btn_text, "callback_data": f"btn_{callback_id}_{idx}"}])
+        inline_keyboard = [[{"text": btn_text, "callback_data": f"btn_{callback_id}_{idx}"}] for idx, btn_text in enumerate(buttons)]
         return {"inline_keyboard": inline_keyboard}
     else:
         reply_keyboard = [[{"text": btn_text}] for btn_text in buttons]
         return {"keyboard": reply_keyboard, "resize_keyboard": True}
 
 def replace_vars(text: str, user_vars: dict) -> str:
-    """Подставляет переменные без учета регистра ({Имя}, {имя}, {ИМЯ})"""
     for var_name, var_val in user_vars.items():
         pattern = re.compile(rf"\{{{var_name}\}}", re.IGNORECASE)
         text = pattern.sub(str(var_val), text)
@@ -87,14 +104,12 @@ def process_node_execution(token, chat_id, node_id, drawflow_data):
 
     b_type = node.get("block_type", "message")
     
-    # 1. Блок Триггера
     if b_type == "trigger":
         next_id = get_next_node_id(node)
         if next_id:
             process_node_execution(token, chat_id, next_id, drawflow_data)
         return
 
-    # 2. Блок Текстового сообщения
     elif b_type == "message":
         send_url = f"https://api.telegram.org/bot{token}/sendMessage"
         raw_text = node.get("custom_text", "")
@@ -111,7 +126,6 @@ def process_node_execution(token, chat_id, node_id, drawflow_data):
 
         requests.post(send_url, json=payload)
 
-    # 3. Блок Ввода переменной
     elif b_type == "input_var":
         send_url = f"https://api.telegram.org/bot{token}/sendMessage"
         raw_text = node.get("custom_text", "Введите значение:")
@@ -122,26 +136,23 @@ def process_node_execution(token, chat_id, node_id, drawflow_data):
         payload = {"chat_id": chat_id, "text": final_text}
         requests.post(send_url, json=payload)
 
-    # 4. Блок Фото / Файла
+    # Отправка файла с устройства
     elif b_type == "media":
-        media_url = node.get("custom_url", "")
+        filepath = node.get("local_file_path")
         media_type = node.get("custom_media_type", "photo")
         raw_caption = node.get("custom_text", "")
         caption = replace_vars(raw_caption, USER_DATA.get(chat_id, {}))
 
-        if media_url:
+        if filepath and os.path.exists(filepath):
             endpoint = "sendPhoto" if media_type == "photo" else "sendDocument"
             field_name = "photo" if media_type == "photo" else "document"
             send_url = f"https://api.telegram.org/bot{token}/{endpoint}"
 
-            payload = {
-                "chat_id": chat_id,
-                field_name: media_url,
-                "caption": caption
-            }
-            requests.post(send_url, json=payload)
+            with open(filepath, "rb") as f:
+                files = {field_name: f}
+                data = {"chat_id": chat_id, "caption": caption}
+                requests.post(send_url, data=data, files=files)
 
-        # Если после отправки фото цепочка продолжается
         next_id = get_next_node_id(node)
         if next_id:
             process_node_execution(token, chat_id, next_id, drawflow_data)
@@ -172,11 +183,9 @@ async def handle_webhook(token: str, request: Request):
             if chat_id not in USER_DATA:
                 USER_DATA[chat_id] = {}
 
-            # Сценарий A: Клик по Inline-кнопке
             if clicked_target_node:
                 process_node_execution(token, chat_id, clicked_target_node, drawflow_data)
 
-            # Сценарий B: Ввод значения переменной
             elif chat_id in USER_STATES and user_input:
                 waiting_node_id = USER_STATES.pop(chat_id)
                 current_node = drawflow_data.get(waiting_node_id)
@@ -190,7 +199,6 @@ async def handle_webhook(token: str, request: Request):
                     if next_id:
                         process_node_execution(token, chat_id, next_id, drawflow_data)
 
-            # Сценарий C: Вызов триггера или нажатие кнопки
             elif user_input:
                 clean_input = normalize_cmd(user_input)
 
