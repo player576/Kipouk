@@ -21,6 +21,7 @@
         .drawflow .drawflow-node { background: #1e1e2e; border: 2px solid #89b4fa; color: #fff; border-radius: 8px; width: 260px; padding: 12px; }
         .drawflow .drawflow-node.trigger-node { border-color: #f38ba8; }
         .drawflow .drawflow-node.input-node { border-color: #a6e3a1; }
+        .drawflow .drawflow-node.media-node { border-color: #f9e2af; }
         .drawflow .drawflow-node label { font-size: 11px; color: #a6adc8; display: block; margin-top: 6px; }
         .drawflow .drawflow-node .input, .drawflow .drawflow-node .output { background: #89b4fa; width: 14px; height: 14px; }
     </style>
@@ -39,6 +40,7 @@
         <button class="btn-add" onclick="addTriggerNode()">⚡ Блок Триггер</button>
         <button class="btn-add" onclick="addMessageNode()">💬 Блок Сообщение</button>
         <button class="btn-add" onclick="addInputNode()">📥 Блок Ввод переменной</button>
+        <button class="btn-add" onclick="addMediaNode()">🖼️ Блок Фото / Файл</button>
     </div>
     <div id="drawflow"></div>
 </main>
@@ -93,6 +95,25 @@
         `);
     }
 
+    function addMediaNode(x = 380, y = 460) {
+        editor.addNode('media', 1, 1, x, y, 'media-node', {}, `
+            <div class="node-content" data-type="media">
+                <b style="color:#f9e2af">🖼️ Фото / Файл</b>
+                <label>Ссылка на файл/фото (URL):</label>
+                <input type="text" class="field-url" placeholder="https://site.com/image.jpg">
+                
+                <label>Тип файла:</label>
+                <select class="field-media-type">
+                    <option value="photo">Фотография</option>
+                    <option value="document">Документ / Файл</option>
+                </select>
+
+                <label>Подпись к медиа (можно {имя}):</label>
+                <textarea class="field-text" rows="2" placeholder="Вот твое фото, {имя}!"></textarea>
+            </div>
+        `);
+    }
+
     async function deployBot() {
         const token = document.getElementById('botToken').value.trim();
         if (!token) return alert('Укажите токен!');
@@ -113,12 +134,16 @@
                 const varName = nodeEl.querySelector('.field-var');
                 const btn = nodeEl.querySelector('.field-btn');
                 const typ = nodeEl.querySelector('.field-type');
+                const url = nodeEl.querySelector('.field-url');
+                const mediaType = nodeEl.querySelector('.field-media-type');
 
                 node.custom_trigger = trg ? trg.value.trim() : "";
                 node.custom_text = txt ? txt.value : "";
                 node.custom_var = varName ? varName.value.trim() : "";
                 node.custom_btn = btn ? btn.value.trim() : "";
                 node.custom_type = typ ? typ.value : "inline";
+                node.custom_url = url ? url.value.trim() : "";
+                node.custom_media_type = mediaType ? mediaType.value : "photo";
             }
         }
 
