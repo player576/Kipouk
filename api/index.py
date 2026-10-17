@@ -77,6 +77,21 @@ def get_next_node_id(node):
         return outs[0].get("node")
     return None
 
+def extract_file_id_from_message(msg: dict) -> str:
+    if "document" in msg:
+        return msg["document"]["file_id"]
+    elif "photo" in msg:
+        return msg["photo"][-1]["file_id"]
+    elif "audio" in msg:
+        return msg["audio"]["file_id"]
+    elif "video" in msg:
+        return msg["video"]["file_id"]
+    elif "voice" in msg:
+        return msg["voice"]["file_id"]
+    elif "sticker" in msg:
+        return msg["sticker"]["file_id"]
+    return ""
+
 def process_node_execution(token, chat_id, node_id, drawflow_data):
     node = drawflow_data.get(node_id)
     if not node:
@@ -106,9 +121,10 @@ def process_node_execution(token, chat_id, node_id, drawflow_data):
 
         requests.post(send_url, json=payload)
 
-    elif b_type == "input_var":
+    elif b_type in ["input_var", "get_file_id"]:
         send_url = f"https://api.telegram.org/bot{token}/sendMessage"
-        raw_text = node.get("custom_text", "Введите значение:")
+        default_prompt = "Введите значение:" if b_type == "input_var" else "Отправьте файл:"
+        raw_text = node.get("custom_text", default_prompt)
         final_text = replace_vars(raw_text, USER_DATA.get(chat_id, {}))
 
         USER_STATES[chat_id] = node_id
@@ -148,10 +164,12 @@ async def handle_webhook(token: str, request: Request):
         chat_id = None
         user_input = None
         clicked_target_node = None
+        raw_msg = None
 
         if "message" in data:
-            chat_id = str(data["message"]["chat"]["id"])
-            user_input = data["message"].get("text", "").strip()
+            raw_msg = data["message"]
+            chat_id = str(raw_msg["chat"]["id"])
+            user_input = raw_msg.get("text", "").strip()
         elif "callback_query" in data:
             chat_id = str(data["callback_query"]["message"]["chat"]["id"])
             callback_data = data["callback_query"].get("data", "")
@@ -167,14 +185,23 @@ async def handle_webhook(token: str, request: Request):
             if clicked_target_node:
                 process_node_execution(token, chat_id, clicked_target_node, drawflow_data)
 
-            elif chat_id in USER_STATES and user_input:
+            elif chat_id in USER_STATES:
                 waiting_node_id = USER_STATES.pop(chat_id)
                 current_node = drawflow_data.get(waiting_node_id)
 
                 if current_node:
-                    var_name = current_node.get("custom_var")
-                    if var_name:
+                    b_type = current_node.get("block_type", "")
+                    var_name = current_node.get("custom_var") or "file_id"
+
+                    if b_type == "input_var" and user_input:
                         USER_DATA[chat_id][var_name] = user_input
+                    elif b_type == "get_file_id" and raw_msg:
+                        extracted_id = extract_file_id_from_message(raw_msg)
+                        if extracted_id:
+                            USER_DATA[chat_id][var_name] = extracted_id
+                        else:
+                            # Если пользователь отправил текст вместо файла
+                            USER_DATA[chat_id][var_name] = user_input or ""
 
                     next_id = get_next_node_id(current_node)
                     if next_id:
