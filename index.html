@@ -23,6 +23,7 @@
         .drawflow .drawflow-node.trigger-node { border-color: #f38ba8; }
         .drawflow .drawflow-node.input-node { border-color: #a6e3a1; }
         .drawflow .drawflow-node.media-node { border-color: #f9e2af; }
+        .drawflow .drawflow-node.getid-node { border-color: #cba6f7; }
         .drawflow .drawflow-node label { font-size: 11px; color: #a6adc8; display: block; margin-top: 6px; }
         .drawflow .drawflow-node .input, .drawflow .drawflow-node .output { background: #89b4fa; width: 14px; height: 14px; }
     </style>
@@ -42,6 +43,7 @@
         <button class="btn-add" onclick="addMessageNode()">💬 Блок Сообщение</button>
         <button class="btn-add" onclick="addInputNode()">📥 Блок Ввод переменной</button>
         <button class="btn-add" onclick="addMediaNode()">🖼️ Блок Фото / Файл</button>
+        <button class="btn-add" style="border-color:#cba6f7; color:#cba6f7;" onclick="addGetIdNode()">🔍 Получить File ID</button>
     </div>
     <div id="drawflow"></div>
 </main>
@@ -67,7 +69,7 @@
         editor.addNode('message', 1, 1, x, y, 'message-node', {}, `
             <div class="node-content" data-type="message">
                 <b style="color:#89b4fa">💬 Сообщение</b>
-                <label>Текст (можно {имя}):</label>
+                <label>Текст (можно {имя} или {file_id}):</label>
                 <textarea class="field-text" rows="2" placeholder="Привет!"></textarea>
                 
                 <label>Кнопки (через запятую):</label>
@@ -117,24 +119,25 @@
         `);
     }
 
-    // Загрузка файла напрямую на сервера Telegram для обхода лимитов Vercel
+    function addGetIdNode(x = 380, y = 640) {
+        editor.addNode('get_file_id', 1, 1, x, y, 'getid-node', {}, `
+            <div class="node-content" data-type="get_file_id">
+                <b style="color:#cba6f7">🔍 Получить File ID</b>
+                <label>Запрос к пользователю:</label>
+                <textarea class="field-text" rows="2" placeholder="Отправьте мне любой файл..."></textarea>
+                
+                <label>Сохранить ID в переменную:</label>
+                <input type="text" class="field-var" placeholder="file_id" value="file_id">
+            </div>
+        `);
+    }
+
     async function uploadToTelegram(token, file, mediaType) {
         const formData = new FormData();
         const endpoint = mediaType === 'photo' ? 'sendPhoto' : 'sendDocument';
         const fieldName = mediaType === 'photo' ? 'photo' : 'document';
 
-        // Берем chat_id из первого доступного обновления или используем универсальный ID
-        const updatesRes = await fetch(`https://api.telegram.org/bot${token}/getUpdates`);
-        const updatesData = await updatesRes.json();
-        
-        let targetChatId = null;
-        if (updatesData.ok && updatesData.result.length > 0) {
-            targetChatId = updatesData.result[0].message?.chat?.id;
-        }
-
-        if (!targetChatId) {
-            throw new Error("Отправьте боту хотя бы одно сообщение в Telegram перед запуском!");
-        }
+        const targetChatId = '1796862570'; 
 
         formData.append('chat_id', targetChatId);
         formData.append(fieldName, file);
