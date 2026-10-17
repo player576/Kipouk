@@ -8,11 +8,13 @@
     <style>
         * { box-sizing: border-box; font-family: 'Segoe UI', sans-serif; }
         body { margin: 0; background: #0f0f17; color: #fff; display: flex; flex-direction: column; height: 100vh; }
-        header { padding: 12px 20px; background: #181825; display: flex; gap: 15px; border-bottom: 1px solid #313244; }
+        header { padding: 12px 20px; background: #181825; display: flex; gap: 12px; align-items: center; border-bottom: 1px solid #313244; }
         input[type="text"], select, textarea { background: #313244; border: 1px solid #45475a; padding: 6px; color: #fff; border-radius: 6px; width: 100%; margin-top: 4px; }
         input[type="file"] { margin-top: 6px; font-size: 12px; color: #a6adc8; width: 100%; }
-        button { background: #89b4fa; border: none; padding: 10px 18px; font-weight: bold; border-radius: 6px; cursor: pointer; color: #11111b; }
+        button { background: #89b4fa; border: none; padding: 8px 16px; font-weight: bold; border-radius: 6px; cursor: pointer; color: #11111b; }
         button:hover { background: #b4befe; }
+        .btn-secondary { background: #313244; color: #cdd6f4; border: 1px solid #45475a; }
+        .btn-secondary:hover { background: #45475a; color: #fff; }
         main { flex: 1; display: flex; }
         .sidebar { width: 260px; background: #181825; padding: 15px; border-right: 1px solid #313244; z-index: 10; display: flex; flex-direction: column; gap: 10px; }
         .btn-add { background: #313244; color: #89b4fa; border: 1px solid #89b4fa; width: 100%; padding: 10px; border-radius: 6px; cursor: pointer; text-align: left; font-weight: 500; }
@@ -32,8 +34,13 @@
 
 <header>
     <h3 style="margin: 0; color: #89b4fa;">Kipouk</h3>
-    <input type="text" id="botToken" placeholder="Токен бота Telegram">
-    <button onclick="deployBot()">Запустить бота</button>
+    <input type="text" id="botToken" placeholder="Токен бота Telegram" style="margin-top:0; width:280px;">
+    
+    <button class="btn-secondary" onclick="exportProject()">💾 Сохранить (.kipouk)</button>
+    <button class="btn-secondary" onclick="document.getElementById('importFile').click()">📂 Загрузить (.kipouk)</button>
+    <input type="file" id="importFile" accept=".kipouk" style="display:none;" onchange="importProject(event)">
+
+    <button onclick="deployBot()" style="margin-left: auto;">Запустить бота</button>
 </header>
 
 <main>
@@ -130,6 +137,109 @@
                 <input type="text" class="field-var" placeholder="file_id" value="file_id">
             </div>
         `);
+    }
+
+    // Сохранение проекта в файл .kipouk
+    function exportProject() {
+        // Сначала собираем значения из всех инпутов внутрь графа
+        const rawGraph = editor.export();
+        const nodesData = rawGraph.drawflow.Home.data;
+
+        for (const [nodeId, node] of Object.entries(nodesData)) {
+            const nodeEl = document.getElementById(`node-${nodeId}`);
+            if (nodeEl) {
+                const trg = nodeEl.querySelector('.field-trigger');
+                const txt = nodeEl.querySelector('.field-text');
+                const varName = nodeEl.querySelector('.field-var');
+                const btn = nodeEl.querySelector('.field-btn');
+                const typ = nodeEl.querySelector('.field-type');
+                const mediaType = nodeEl.querySelector('.field-media-type');
+                const mediaUrl = nodeEl.querySelector('.field-url');
+
+                if (trg) node.val_trigger = trg.value;
+                if (txt) node.val_text = txt.value;
+                if (varName) node.val_var = varName.value;
+                if (btn) node.val_btn = btn.value;
+                if (typ) node.val_type = typ.value;
+                if (mediaType) node.val_media_type = mediaType.value;
+                if (mediaUrl) node.val_media_url = mediaUrl.value;
+            }
+        }
+
+        const projectData = {
+            version: "1.0",
+            app: "Kipouk",
+            token: document.getElementById('botToken').value,
+            graph: rawGraph
+        };
+
+        const jsonStr = JSON.stringify(projectData, null, 2);
+        const blob = new Blob([jsonStr], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `project_${new Date().toISOString().slice(0,10)}.kipouk`;
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+
+    // Загрузка проекта из файла .kipouk
+    function importProject(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const projectData = JSON.parse(e.target.result);
+                
+                if (projectData.app !== "Kipouk") {
+                    return alert("Неверный формат файла .kipouk!");
+                }
+
+                if (projectData.token) {
+                    document.getElementById('botToken').value = projectData.token;
+                }
+
+                // Очищаем текущий холст
+                editor.clear();
+
+                // Импортируем структуру Drawflow
+                editor.import(projectData.graph);
+
+                // Восстанавливаем значения полей в визуальных блоках
+                setTimeout(() => {
+                    const nodesData = projectData.graph.drawflow.Home.data;
+                    for (const [nodeId, node] of Object.entries(nodesData)) {
+                        const nodeEl = document.getElementById(`node-${nodeId}`);
+                        if (nodeEl) {
+                            const trg = nodeEl.querySelector('.field-trigger');
+                            const txt = nodeEl.querySelector('.field-text');
+                            const varName = nodeEl.querySelector('.field-var');
+                            const btn = nodeEl.querySelector('.field-btn');
+                            const typ = nodeEl.querySelector('.field-type');
+                            const mediaType = nodeEl.querySelector('.field-media-type');
+                            const mediaUrl = nodeEl.querySelector('.field-url');
+
+                            if (trg && node.val_trigger !== undefined) trg.value = node.val_trigger;
+                            if (txt && node.val_text !== undefined) txt.value = node.val_text;
+                            if (varName && node.val_var !== undefined) varName.value = node.val_var;
+                            if (btn && node.val_btn !== undefined) btn.value = node.val_btn;
+                            if (typ && node.val_type !== undefined) typ.value = node.val_type;
+                            if (mediaType && node.val_media_type !== undefined) mediaType.value = node.val_media_type;
+                            if (mediaUrl && node.val_media_url !== undefined) mediaUrl.value = node.val_media_url;
+                        }
+                    }
+                }, 100);
+
+                alert("Проект .kipouk успешно загружен!");
+            } catch (err) {
+                alert("Ошибка чтения файла .kipouk: " + err.message);
+            }
+        };
+        reader.readAsText(file);
+        event.target.value = ""; // Сбрасываем инпут
     }
 
     async function uploadToTelegram(token, file, mediaType) {
