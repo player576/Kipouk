@@ -133,7 +133,10 @@ def process_node_execution(token, chat_id, node_id, drawflow_data):
         requests.post(send_url, json=payload)
 
     elif b_type == "media":
-        media_url = node.get("custom_media_url", "")
+        media_url_raw = node.get("custom_media_url", "")
+        # Подставляем значение переменной, если в поле была указана переменная (например {file_id})
+        final_media_url = replace_vars(media_url_raw, USER_DATA.get(chat_id, {}))
+        
         media_type = node.get("custom_media_type", "document")
         raw_caption = node.get("custom_text", "")
         caption = replace_vars(raw_caption, USER_DATA.get(chat_id, {}))
@@ -142,10 +145,10 @@ def process_node_execution(token, chat_id, node_id, drawflow_data):
         field_name = "photo" if media_type == "photo" else "document"
         send_url = f"https://api.telegram.org/bot{token}/{endpoint}"
 
-        if media_url:
+        if final_media_url:
             payload = {
                 "chat_id": chat_id,
-                field_name: media_url,
+                field_name: final_media_url,
                 "caption": caption
             }
             requests.post(send_url, json=payload)
@@ -200,7 +203,6 @@ async def handle_webhook(token: str, request: Request):
                         if extracted_id:
                             USER_DATA[chat_id][var_name] = extracted_id
                         else:
-                            # Если пользователь отправил текст вместо файла
                             USER_DATA[chat_id][var_name] = user_input or ""
 
                     next_id = get_next_node_id(current_node)
