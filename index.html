@@ -100,12 +100,12 @@
     function addMediaNode(x = 380, y = 460) {
         editor.addNode('media', 1, 1, x, y, 'media-node', {}, `
             <div class="node-content" data-type="media">
-                <b style="color:#f9e2af">🖼️ Файл с ПК / File ID</b>
+                <b style="color:#f9e2af">🖼️ Файл с ПК / File ID / Переменная</b>
                 <label>Выберите любой файл с ПК (.jar, .exe, .png и др.):</label>
                 <input type="file" class="field-file">
                 
-                <label>ИЛИ вставьте ссылку / File ID:</label>
-                <input type="text" class="field-url" placeholder="https://... или File ID">
+                <label>ИЛИ ссылка / File ID / переменная ({file_id}):</label>
+                <input type="text" class="field-url" placeholder="https://..., File ID или {file_id}">
 
                 <label>Тип отправки:</label>
                 <select class="field-media-type">
