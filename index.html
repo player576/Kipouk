@@ -79,17 +79,15 @@
     function addMessageNode(x = 380, y = 100, textVal = "", typeVal = "inline", buttonsArr = []) {
         let buttonsHtml = '';
         if (buttonsArr && buttonsArr.length > 0) {
-            buttonsArr.forEach(bText => {
+            buttonsArr.forEach((bText, idx) => {
                 buttonsHtml += `
                     <div class="btn-row">
+                        <span style="font-size:11px; color:#89b4fa; width:15px;">${idx+1}.</span>
                         <input type="text" class="field-btn-item" value="${bText}" placeholder="Текст кнопки">
                         <button class="btn-del" onclick="this.parentElement.remove()">✕</button>
                     </div>`;
             });
         }
-
-        // Вычисляем количество выходов (1 порт по умолчанию или по числу кнопок)
-        const outputsCount = Math.max(1, buttonsArr.length > 0 ? buttonsArr.length : 1);
 
         const nodeHtml = `
             <div class="node-content" data-type="message">
@@ -103,22 +101,28 @@
                     <option value="reply" ${typeVal==='reply'?'selected':''}>Без дропа (Меню внизу)</option>
                 </select>
 
-                <label style="margin-top:8px;">Кнопки (каждая — новый кружок вывода):</label>
+                <label style="margin-top:8px;">Кнопки (1-я = 1 порт, 2-я = 2 порт и т.д.):</label>
                 <div class="buttons-container">
                     ${buttonsHtml}
                 </div>
-                <button class="btn-secondary" style="width:100%; margin-top:6px; font-size:12px;" onclick="addNodeButton(this)">➕ Добавить кнопку</button>
+                <button class="btn-secondary" style="width:100%; margin-top:6px; font-size:12px;" onclick="addNodeButton(this)">➕ Добавить кнопку (до 4)</button>
             </div>
         `;
 
-        editor.addNode('message', 1, outputsCount, x, y, 'message-node', {}, nodeHtml);
+        // Создаем блок сразу с 4 выходами (портами) на правой стороне
+        editor.addNode('message', 1, 4, x, y, 'message-node', {}, nodeHtml);
     }
 
     function addNodeButton(btnEl) {
         const container = btnEl.parentElement.querySelector('.buttons-container');
+        const count = container.children.length;
+        if (count >= 4) {
+            return alert("Максимум можно добавить 4 кнопки на один блок сообщения!");
+        }
         const row = document.createElement('div');
         row.className = 'btn-row';
         row.innerHTML = `
+            <span style="font-size:11px; color:#89b4fa; width:15px;">${count+1}.</span>
             <input type="text" class="field-btn-item" placeholder="Текст кнопки">
             <button class="btn-del" onclick="this.parentElement.remove()">✕</button>
         `;
@@ -173,7 +177,6 @@
         `);
     }
 
-    // Сохранение в .kipouk
     function exportProject() {
         const rawGraph = editor.export();
         const nodesData = rawGraph.drawflow.Home.data;
@@ -195,14 +198,13 @@
                 if (mediaType) node.val_media_type = mediaType.value;
                 if (mediaUrl) node.val_media_url = mediaUrl.value;
 
-                // Собираем массив кнопок из полей ввода
                 const btnInputs = nodeEl.querySelectorAll('.field-btn-item');
                 node.val_buttons = Array.from(btnInputs).map(i => i.value.trim()).filter(b => b.length > 0);
             }
         }
 
         const projectData = {
-            version: "1.1",
+            version: "1.2",
             app: "Kipouk",
             token: document.getElementById('botToken').value,
             graph: rawGraph
@@ -219,7 +221,6 @@
         URL.revokeObjectURL(url);
     }
 
-    // Загрузка из .kipouk
     function importProject(event) {
         const file = event.target.files[0];
         if (!file) return;
@@ -228,7 +229,7 @@
         reader.onload = function(e) {
             try {
                 const projectData = JSON.parse(e.target.result);
-                if (projectData.app !== "Kipouk") return alert("Неверный формат файла .kipouk!");
+                if (projectData.app !== "Kipouk") return alert("Неверный файл .kipouk!");
 
                 if (projectData.token) document.getElementById('botToken').value = projectData.token;
 
@@ -240,14 +241,14 @@
                     for (const [nodeId, node] of Object.entries(nodesData)) {
                         const nodeEl = document.getElementById(`node-${nodeId}`);
                         if (nodeEl && node.block_type === 'message') {
-                            // Перерисовываем блок сообщения с кнопками
                             const container = nodeEl.querySelector('.buttons-container');
                             if (container && node.val_buttons) {
                                 container.innerHTML = '';
-                                node.val_buttons.forEach(bText => {
+                                node.val_buttons.forEach((bText, idx) => {
                                     const row = document.createElement('div');
                                     row.className = 'btn-row';
                                     row.innerHTML = `
+                                        <span style="font-size:11px; color:#89b4fa; width:15px;">${idx+1}.</span>
                                         <input type="text" class="field-btn-item" value="${bText}" placeholder="Текст кнопки">
                                         <button class="btn-del" onclick="this.parentElement.remove()">✕</button>
                                     `;
@@ -329,20 +330,9 @@
                 const mType = mediaType ? mediaType.value : "document";
                 node.custom_media_type = mType;
                 
-                // Собираем актуальные кнопки и обновляем количество выходов (outputs) в структуре графа
                 const btnInputs = nodeEl.querySelectorAll('.field-btn-item');
                 const buttonsList = Array.from(btnInputs).map(i => i.value.trim()).filter(b => b.length > 0);
                 node.custom_buttons_list = buttonsList;
-
-                const neededOutputs = Math.max(1, buttonsList.length);
-                // Динамически корректируем структуру outputs под количество кнопок
-                if (!node.outputs) node.outputs = {};
-                for (let i = 1; i <= neededOutputs; i++) {
-                    const outKey = `output_${i}`;
-                    if (!node.outputs[outKey]) {
-                        node.outputs[outKey] = { connections: [] };
-                    }
-                }
 
                 let finalMediaUrl = mediaUrl ? mediaUrl.value.trim() : "";
                 if (fileInput && fileInput.files[0]) {
