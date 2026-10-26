@@ -51,18 +51,22 @@ def normalize_cmd(text: str) -> str:
         text = text[1:]
     return text
 
-def build_keyboard(btn_raw, btn_type, callback_id=""):
-    if not btn_raw:
-        return None
-    buttons = [b.strip() for b in btn_raw.split(",") if b.strip()]
-    if not buttons:
+def build_dynamic_keyboard(buttons_list, btn_type, node_id):
+    if not buttons_list:
         return None
 
     if btn_type == "inline":
-        inline_keyboard = [[{"text": btn_text, "callback_data": f"btn_{callback_id}_{idx}"}] for idx, btn_text in enumerate(buttons)]
+        inline_keyboard = []
+        for idx, btn_text in enumerate(buttons_list):
+            # Каждая кнопка привязывается к своему output индексу (output_1, output_2 и т.д.)
+            output_num = idx + 1
+            inline_keyboard.append([{
+                "text": btn_text,
+                "callback_data": f"btn_{node_id}_{output_num}"
+            }])
         return {"inline_keyboard": inline_keyboard}
     else:
-        reply_keyboard = [[{"text": btn_text}] for btn_text in buttons]
+        reply_keyboard = [[{"text": btn_text}] for btn_text in buttons_list]
         return {"keyboard": reply_keyboard, "resize_keyboard": True}
 
 def replace_vars(text: str, user_vars: dict) -> str:
@@ -71,8 +75,8 @@ def replace_vars(text: str, user_vars: dict) -> str:
         text = pattern.sub(str(var_val), text)
     return text
 
-def get_next_node_id(node):
-    outs = node.get("outputs", {}).get("output_1", {}).get("connections", [])
+def get_node_connection_by_output(node, output_name):
+    outs = node.get("outputs", {}).get(output_name, {}).get("connections", [])
     if outs:
         return outs[0].get("node")
     return None
@@ -92,7 +96,7 @@ def extract_file_id_from_message(msg: dict) -> str:
         return msg["sticker"]["file_id"]
     return ""
 
-def process_node_execution(token, chat_id, node_id, drawflow_data):
+def process_node_execution(token, chat_id, node_id, drawflow_data, output_name="output_1"):
     node = drawflow_data.get(node_id)
     if not node:
         return
@@ -100,7 +104,7 @@ def process_node_execution(token, chat_id, node_id, drawflow_data):
     b_type = node.get("block_type", "message")
     
     if b_type == "trigger":
-        next_id = get_next_node_id(node)
+        next_id = get_node_connection_by_output(node, "output_1")
         if next_id:
             process_node_execution(token, chat_id, next_id, drawflow_data)
         return
@@ -110,12 +114,11 @@ def process_node_execution(token, chat_id, node_id, drawflow_data):
         raw_text = node.get("custom_text", "")
         final_text = replace_vars(raw_text, USER_DATA.get(chat_id, {}))
         
-        btn_raw = node.get("custom_btn", "")
+        buttons_list = node.get("custom_buttons_list", [])
         btn_type = node.get("custom_type", "inline")
-        next_id = get_next_node_id(node)
 
         payload = {"chat_id": chat_id, "text": final_text or "..."}
-        markup = build_keyboard(btn_raw, btn_type, callback_id=next_id)
+        markup = build_dynamic_keyboard(buttons_list, btn_type, node_id)
         if markup:
             payload["reply_markup"] = markup
 
@@ -134,7 +137,6 @@ def process_node_execution(token, chat_id, node_id, drawflow_data):
 
     elif b_type == "media":
         media_url_raw = node.get("custom_media_url", "")
-        # Подставляем значение переменной, если в поле была указана переменная (например {file_id})
         final_media_url = replace_vars(media_url_raw, USER_DATA.get(chat_id, {}))
         
         media_type = node.get("custom_media_type", "document")
@@ -153,7 +155,7 @@ def process_node_execution(token, chat_id, node_id, drawflow_data):
             }
             requests.post(send_url, json=payload)
 
-        next_id = get_next_node_id(node)
+        next_id = get_node_connection_by_output(node, "output_1")
         if next_id:
             process_node_execution(token, chat_id, next_id, drawflow_data)
 
@@ -166,7 +168,8 @@ async def handle_webhook(token: str, request: Request):
 
         chat_id = None
         user_input = None
-        clicked_target_node = None
+        target_node_id = None
+        output_port = "output_1"
         raw_msg = None
 
         if "message" in data:
@@ -176,17 +179,23 @@ async def handle_webhook(token: str, request: Request):
         elif "callback_query" in data:
             chat_id = str(data["callback_query"]["message"]["chat"]["id"])
             callback_data = data["callback_query"].get("data", "")
+            # Формат callback_data: btn_<node_id>_<output_num>
             if callback_data.startswith("btn_"):
                 parts = callback_data.split("_")
-                if len(parts) >= 2:
-                    clicked_target_node = parts[1]
+                if len(parts) >= 3:
+                    target_node_id = parts[1]
+                    output_num = parts[2]
+                    output_port = f"output_{output_num}"
 
         if chat_id and drawflow_data:
             if chat_id not in USER_DATA:
                 USER_DATA[chat_id] = {}
 
-            if clicked_target_node:
-                process_node_execution(token, chat_id, clicked_target_node, drawflow_data)
+            if target_node_id:
+                # Пользователь нажал кнопку: переходим по конкретному кружку-выходу этой кнопки
+                next_id = get_node_connection_by_output(drawflow_data.get(target_node_id), output_port)
+                if next_id:
+                    process_node_execution(token, chat_id, next_id, drawflow_data)
 
             elif chat_id in USER_STATES:
                 waiting_node_id = USER_STATES.pop(chat_id)
@@ -205,7 +214,7 @@ async def handle_webhook(token: str, request: Request):
                         else:
                             USER_DATA[chat_id][var_name] = user_input or ""
 
-                    next_id = get_next_node_id(current_node)
+                    next_id = get_node_connection_by_output(current_node, "output_1")
                     if next_id:
                         process_node_execution(token, chat_id, next_id, drawflow_data)
 
@@ -222,12 +231,15 @@ async def handle_webhook(token: str, request: Request):
                             break
                     
                     elif b_type == "message":
-                        btns = [normalize_cmd(b) for b in node.get("custom_btn", "").split(",") if b.strip()]
-                        if clean_input in btns:
-                            next_id = get_next_node_id(node)
-                            if next_id:
-                                process_node_execution(token, chat_id, next_id, drawflow_data)
-                            break
+                        # Поддержка Reply-кнопок (внизу экрана) по текстовому совпадению
+                        buttons_list = node.get("custom_buttons_list", [])
+                        for idx, btn_text in enumerate(buttons_list):
+                            if normalize_cmd(btn_text) == clean_input:
+                                out_port = f"output_{idx + 1}"
+                                next_id = get_node_connection_by_output(node, out_port)
+                                if next_id:
+                                    process_node_execution(token, chat_id, next_id, drawflow_data)
+                                break
 
         return {"status": "ok"}
     except Exception as e:
