@@ -64,7 +64,7 @@
     const editor = new Drawflow(id);
     editor.start();
 
-    // Создаем начальный блок с триггером /start при старте
+    // Создаем стартовый триггер
     addTriggerNode(50, 100, "/start");
 
     function addTriggerNode(x = 100, y = 100, defaultVal = "/start") {
@@ -81,11 +81,12 @@
         let buttonsHtml = '';
         if (buttonsArr && buttonsArr.length > 0) {
             buttonsArr.forEach((bText, idx) => {
+                let portName = idx === 0 ? "Выход (Основной / Кнопка 1)" : `Выход (Кнопка ${idx+1})`;
                 buttonsHtml += `
                     <div class="btn-row">
-                        <span style="font-size:11px; color:#89b4fa; width:55px;">Выход ${idx+2}:</span>
+                        <span style="font-size:10px; color:#f9e2af; width:70px;">${portName}:</span>
                         <input type="text" class="field-btn-item" value="${bText}" placeholder="Текст кнопки">
-                        <button class="btn-del" onclick="this.parentElement.remove()">✕</button>
+                        <button class="btn-del" onclick="removeNodeButton(this)">✕</button>
                     </div>`;
             });
         }
@@ -93,7 +94,6 @@
         const nodeHtml = `
             <div class="node-content" data-type="message">
                 <b style="color:#89b4fa">💬 Сообщение</b>
-                <div style="font-size:10px; color:#a6e3a1; margin-bottom:4px;">🟢 Выход 1: Основной переход</div>
                 
                 <label>Текст (можно {имя}):</label>
                 <textarea class="field-text" rows="2" placeholder="Привет!">${textVal}</textarea>
@@ -104,7 +104,7 @@
                     <option value="reply" ${typeVal==='reply'?'selected':''}>Без дропа (Меню внизу)</option>
                 </select>
 
-                <label style="margin-top:8px;">Индивидуальные кнопки (ветки 2-5):</label>
+                <label style="margin-top:8px;">Кнопки:</label>
                 <div class="buttons-container">
                     ${buttonsHtml}
                 </div>
@@ -112,24 +112,50 @@
             </div>
         `;
 
-        // Создаем блок сообщения с 5 выходами: 1 основной + 4 под отдельные кнопки
-        editor.addNode('message', 1, 5, x, y, 'message-node', {}, nodeHtml);
+        // Изначально у блока всегда ровно 1 выход (для обычного сообщения ИЛИ для 1-й кнопки)
+        const initialOutputs = Math.max(1, buttonsArr.length);
+        editor.addNode('message', 1, initialOutputs, x, y, 'message-node', {}, nodeHtml);
     }
 
     function addNodeButton(btnEl) {
         const container = btnEl.parentElement.querySelector('.buttons-container');
         const count = container.children.length;
         if (count >= 4) {
-            return alert("Максимум можно добавить 4 отдельные кнопки!");
+            return alert("Максимум можно добавить 4 кнопки!");
         }
+
+        const nodeEl = btnEl.closest('.drawflow-node');
+        const nodeId = nodeEl.id.replace('node-', '');
+
+        // Добавляем новый порт в Drawflow
+        editor.addOutput(nodeId);
+
+        const newIndex = container.children.length;
+        let portLabel = newIndex === 0 ? "Выход (Основной)" : `Выход (Кнопка ${newIndex + 1})`;
+
         const row = document.createElement('div');
         row.className = 'btn-row';
         row.innerHTML = `
-            <span style="font-size:11px; color:#89b4fa; width:55px;">Выход ${count+2}:</span>
+            <span style="font-size:10px; color:#f9e2af; width:70px;">${portLabel}:</span>
             <input type="text" class="field-btn-item" placeholder="Текст кнопки">
-            <button class="btn-del" onclick="this.parentElement.remove()">✕</button>
+            <button class="btn-del" onclick="removeNodeButton(this)">✕</button>
         `;
         container.appendChild(row);
+    }
+
+    function removeNodeButton(delBtn) {
+        const row = delBtn.parentElement;
+        const container = row.parentElement;
+        const nodeEl = delBtn.closest('.drawflow-node');
+        const nodeId = nodeEl.id.replace('node-', '');
+
+        row.remove();
+
+        // Убираем последний порт вывода в Drawflow, если кнопок стало меньше
+        // (Drawflow автоматически удаляет последний output у блока)
+        try {
+            editor.removeOutput(nodeId, 'output_' + (container.children.length + 1));
+        } catch(e) {}
     }
 
     function addInputNode(x = 380, y = 280, textVal = "", varVal = "имя") {
@@ -207,7 +233,7 @@
         }
 
         const projectData = {
-            version: "1.5",
+            version: "1.6",
             app: "Kipouk",
             token: document.getElementById('botToken').value,
             graph: rawGraph
@@ -232,7 +258,7 @@
         reader.onload = function(e) {
             try {
                 const projectData = JSON.parse(e.target.result);
-                if (projectData.app !== "Kipouk") return alert("Неверный формат файла .kipouk!");
+                if (projectData.app !== "Kipouk") return alert("Неверный файл .kipouk!");
 
                 if (projectData.token) document.getElementById('botToken').value = projectData.token;
 
@@ -251,9 +277,9 @@
                                     const row = document.createElement('div');
                                     row.className = 'btn-row';
                                     row.innerHTML = `
-                                        <span style="font-size:11px; color:#89b4fa; width:55px;">Выход ${idx+2}:</span>
+                                        <span style="font-size:10px; color:#f9e2af; width:70px;">Выход ${idx+1}:</span>
                                         <input type="text" class="field-btn-item" value="${bText}" placeholder="Текст кнопки">
-                                        <button class="btn-del" onclick="this.parentElement.remove()">✕</button>
+                                        <button class="btn-del" onclick="removeNodeButton(this)">✕</button>
                                     `;
                                     container.appendChild(row);
                                 });
