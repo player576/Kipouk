@@ -64,6 +64,7 @@
     const editor = new Drawflow(id);
     editor.start();
 
+    // Создаем начальный триггер
     addTriggerNode(50, 100, "/start");
 
     function addTriggerNode(x = 100, y = 100, defaultVal = "/start") {
@@ -82,8 +83,8 @@
             buttonsArr.forEach((bText, idx) => {
                 buttonsHtml += `
                     <div class="btn-row">
-                        <span style="font-size:10px; color:#f9e2af; width:60px;">Кнопка ${idx+1}:</span>
-                        <input type="text" class="field-btn-item" value="${bText}" placeholder="Текст">
+                        <span style="font-size:10px; color:#f9e2af; width:65px;">Кнопка ${idx+1}:</span>
+                        <input type="text" class="field-btn-item" value="${bText}" placeholder="Текст кнопки">
                         <button class="btn-del" onclick="removeNodeButton(this)">✕</button>
                     </div>`;
             });
@@ -110,7 +111,7 @@
             </div>
         `;
 
-        // Если есть сохраненные кнопки, создаем соответствующее количество портов (минимум 1)
+        // Если кнопок нет — ровно 1 выход. Если есть — по количеству кнопок.
         const initialOutputs = Math.max(1, buttonsArr.length);
         editor.addNode('message', 1, initialOutputs, x, y, 'message-node', {}, nodeHtml);
     }
@@ -125,15 +126,15 @@
         const nodeEl = btnEl.closest('.drawflow-node');
         const nodeId = nodeEl.id.replace('node-', '');
 
-        // Динамически добавляем новый порт в Drawflow
+        // Добавляем новый выход в Drawflow
         editor.addOutput(nodeId);
 
         const newIndex = container.children.length;
         const row = document.createElement('div');
         row.className = 'btn-row';
         row.innerHTML = `
-            <span style="font-size:10px; color:#f9e2af; width:60px;">Кнопка ${newIndex+1}:</span>
-            <input type="text" class="field-btn-item" placeholder="Текст">
+            <span style="font-size:10px; color:#f9e2af; width:65px;">Кнопка ${newIndex+1}:</span>
+            <input type="text" class="field-btn-item" placeholder="Текст кнопки">
             <button class="btn-del" onclick="removeNodeButton(this)">✕</button>
         `;
         container.appendChild(row);
@@ -148,7 +149,6 @@
         const rowIndex = Array.from(container.children).indexOf(row);
         row.remove();
 
-        // Удаляем соответствующий порт в Drawflow по его индексу (нумерация с 1)
         try {
             editor.removeOutput(nodeId, 'output_' + (rowIndex + 1));
         } catch(e) {}
@@ -229,7 +229,7 @@
         }
 
         const projectData = {
-            version: "1.7",
+            version: "1.8",
             app: "Kipouk",
             token: document.getElementById('botToken').value,
             graph: rawGraph
@@ -254,7 +254,7 @@
         reader.onload = function(e) {
             try {
                 const projectData = JSON.parse(e.target.result);
-                if (projectData.app !== "Kipouk") return alert("Неверный файл .kipouk!");
+                if (projectData.app !== "Kipouk") return alert("Неверный формат файла .kipouk!");
 
                 if (projectData.token) document.getElementById('botToken').value = projectData.token;
 
@@ -273,8 +273,8 @@
                                     const row = document.createElement('div');
                                     row.className = 'btn-row';
                                     row.innerHTML = `
-                                        <span style="font-size:10px; color:#f9e2af; width:60px;">Кнопка ${idx+1}:</span>
-                                        <input type="text" class="field-btn-item" value="${bText}" placeholder="Текст">
+                                        <span style="font-size:10px; color:#f9e2af; width:65px;">Кнопка ${idx+1}:</span>
+                                        <input type="text" class="field-btn-item" value="${bText}" placeholder="Текст кнопки">
                                         <button class="btn-del" onclick="removeNodeButton(this)">✕</button>
                                     `;
                                     container.appendChild(row);
