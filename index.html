@@ -64,7 +64,6 @@
     const editor = new Drawflow(id);
     editor.start();
 
-    // Создаем стартовый триггер
     addTriggerNode(50, 100, "/start");
 
     function addTriggerNode(x = 100, y = 100, defaultVal = "/start") {
@@ -81,11 +80,10 @@
         let buttonsHtml = '';
         if (buttonsArr && buttonsArr.length > 0) {
             buttonsArr.forEach((bText, idx) => {
-                let portName = idx === 0 ? "Выход (Основной / Кнопка 1)" : `Выход (Кнопка ${idx+1})`;
                 buttonsHtml += `
                     <div class="btn-row">
-                        <span style="font-size:10px; color:#f9e2af; width:70px;">${portName}:</span>
-                        <input type="text" class="field-btn-item" value="${bText}" placeholder="Текст кнопки">
+                        <span style="font-size:10px; color:#f9e2af; width:60px;">Кнопка ${idx+1}:</span>
+                        <input type="text" class="field-btn-item" value="${bText}" placeholder="Текст">
                         <button class="btn-del" onclick="removeNodeButton(this)">✕</button>
                     </div>`;
             });
@@ -112,7 +110,7 @@
             </div>
         `;
 
-        // Изначально у блока всегда ровно 1 выход (для обычного сообщения ИЛИ для 1-й кнопки)
+        // Если есть сохраненные кнопки, создаем соответствующее количество портов (минимум 1)
         const initialOutputs = Math.max(1, buttonsArr.length);
         editor.addNode('message', 1, initialOutputs, x, y, 'message-node', {}, nodeHtml);
     }
@@ -127,17 +125,15 @@
         const nodeEl = btnEl.closest('.drawflow-node');
         const nodeId = nodeEl.id.replace('node-', '');
 
-        // Добавляем новый порт в Drawflow
+        // Динамически добавляем новый порт в Drawflow
         editor.addOutput(nodeId);
 
         const newIndex = container.children.length;
-        let portLabel = newIndex === 0 ? "Выход (Основной)" : `Выход (Кнопка ${newIndex + 1})`;
-
         const row = document.createElement('div');
         row.className = 'btn-row';
         row.innerHTML = `
-            <span style="font-size:10px; color:#f9e2af; width:70px;">${portLabel}:</span>
-            <input type="text" class="field-btn-item" placeholder="Текст кнопки">
+            <span style="font-size:10px; color:#f9e2af; width:60px;">Кнопка ${newIndex+1}:</span>
+            <input type="text" class="field-btn-item" placeholder="Текст">
             <button class="btn-del" onclick="removeNodeButton(this)">✕</button>
         `;
         container.appendChild(row);
@@ -149,12 +145,12 @@
         const nodeEl = delBtn.closest('.drawflow-node');
         const nodeId = nodeEl.id.replace('node-', '');
 
+        const rowIndex = Array.from(container.children).indexOf(row);
         row.remove();
 
-        // Убираем последний порт вывода в Drawflow, если кнопок стало меньше
-        // (Drawflow автоматически удаляет последний output у блока)
+        // Удаляем соответствующий порт в Drawflow по его индексу (нумерация с 1)
         try {
-            editor.removeOutput(nodeId, 'output_' + (container.children.length + 1));
+            editor.removeOutput(nodeId, 'output_' + (rowIndex + 1));
         } catch(e) {}
     }
 
@@ -233,7 +229,7 @@
         }
 
         const projectData = {
-            version: "1.6",
+            version: "1.7",
             app: "Kipouk",
             token: document.getElementById('botToken').value,
             graph: rawGraph
@@ -277,8 +273,8 @@
                                     const row = document.createElement('div');
                                     row.className = 'btn-row';
                                     row.innerHTML = `
-                                        <span style="font-size:10px; color:#f9e2af; width:70px;">Выход ${idx+1}:</span>
-                                        <input type="text" class="field-btn-item" value="${bText}" placeholder="Текст кнопки">
+                                        <span style="font-size:10px; color:#f9e2af; width:60px;">Кнопка ${idx+1}:</span>
+                                        <input type="text" class="field-btn-item" value="${bText}" placeholder="Текст">
                                         <button class="btn-del" onclick="removeNodeButton(this)">✕</button>
                                     `;
                                     container.appendChild(row);
