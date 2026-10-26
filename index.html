@@ -21,7 +21,7 @@
         .btn-add:hover { background: #45475a; }
         #drawflow { width: 100%; height: 100%; background: #11111b; }
         
-        .drawflow .drawflow-node { background: #1e1e2e; border: 2px solid #89b4fa; color: #fff; border-radius: 8px; width: 290px; padding: 12px; }
+        .drawflow .drawflow-node { background: #1e1e2e; border: 2px solid #89b4fa; color: #fff; border-radius: 8px; width: 300px; padding: 12px; }
         .drawflow .drawflow-node.trigger-node { border-color: #f38ba8; }
         .drawflow .drawflow-node.input-node { border-color: #a6e3a1; }
         .drawflow .drawflow-node.media-node { border-color: #f9e2af; }
@@ -82,8 +82,8 @@
             buttonsArr.forEach((bText, idx) => {
                 buttonsHtml += `
                     <div class="btn-row">
-                        <span style="font-size:11px; color:#89b4fa; width:15px;">${idx+1}.</span>
-                        <input type="text" class="field-btn-item" value="${bText}" placeholder="Текст кнопки">
+                        <span style="font-size:11px; color:#f9e2af; width:45px;">Кнопка ${idx+1}:</span>
+                        <input type="text" class="field-btn-item" value="${bText}" placeholder="Текст">
                         <button class="btn-del" onclick="this.parentElement.remove()">✕</button>
                     </div>`;
             });
@@ -92,6 +92,8 @@
         const nodeHtml = `
             <div class="node-content" data-type="message">
                 <b style="color:#89b4fa">💬 Сообщение</b>
+                <div style="font-size:10px; color:#f9e2af; margin-bottom:4px;">🟢 Выход 1: Следующее сообщение</div>
+                
                 <label>Текст (можно {имя}):</label>
                 <textarea class="field-text" rows="2" placeholder="Привет!">${textVal}</textarea>
                 
@@ -101,32 +103,41 @@
                     <option value="reply" ${typeVal==='reply'?'selected':''}>Без дропа (Меню внизу)</option>
                 </select>
 
-                <label style="margin-top:8px;">Кнопки (1-я = 1 порт, 2-я = 2 порт и т.д.):</label>
+                <label style="margin-top:8px;">Кнопки (каждая создает свой выход):</label>
                 <div class="buttons-container">
                     ${buttonsHtml}
                 </div>
-                <button class="btn-secondary" style="width:100%; margin-top:6px; font-size:12px;" onclick="addNodeButton(this)">➕ Добавить кнопку (до 4)</button>
+                <button class="btn-secondary" style="width:100%; margin-top:6px; font-size:12px;" onclick="addNodeButton(this)">➕ Добавить кнопку</button>
             </div>
         `;
 
-        // Создаем блок сразу с 4 выходами (портами) на правой стороне
-        editor.addNode('message', 1, 4, x, y, 'message-node', {}, nodeHtml);
+        // Создаем блок: 1 вход, а outputs вычисляем: 1 основной + количество кнопок (минимум 1, максимум 5)
+        const totalOutputs = Math.max(1, (buttonsArr ? buttonsArr.length : 0) + 1);
+        editor.addNode('message', 1, totalOutputs, x, y, 'message-node', {}, nodeHtml);
     }
 
     function addNodeButton(btnEl) {
         const container = btnEl.parentElement.querySelector('.buttons-container');
         const count = container.children.length;
         if (count >= 4) {
-            return alert("Максимум можно добавить 4 кнопки на один блок сообщения!");
+            return alert("Максимум можно добавить 4 кнопки!");
         }
+        
+        // Получаем ID блока по DOM-элементу
+        const nodeEl = btnEl.closest('.drawflow-node');
+        const nodeId = nodeEl.id.replace('node-', '');
+
         const row = document.createElement('div');
         row.className = 'btn-row';
         row.innerHTML = `
-            <span style="font-size:11px; color:#89b4fa; width:15px;">${count+1}.</span>
-            <input type="text" class="field-btn-item" placeholder="Текст кнопки">
+            <span style="font-size:11px; color:#f9e2af; width:45px;">Кнопка ${count+1}:</span>
+            <input type="text" class="field-btn-item" placeholder="Текст">
             <button class="btn-del" onclick="this.parentElement.remove()">✕</button>
         `;
         container.appendChild(row);
+
+        // Динамически добавляем новый порт (кружок вывода) в Drawflow
+        editor.addOutput(nodeId);
     }
 
     function addInputNode(x = 380, y = 280) {
@@ -204,7 +215,7 @@
         }
 
         const projectData = {
-            version: "1.2",
+            version: "1.3",
             app: "Kipouk",
             token: document.getElementById('botToken').value,
             graph: rawGraph
@@ -248,8 +259,8 @@
                                     const row = document.createElement('div');
                                     row.className = 'btn-row';
                                     row.innerHTML = `
-                                        <span style="font-size:11px; color:#89b4fa; width:15px;">${idx+1}.</span>
-                                        <input type="text" class="field-btn-item" value="${bText}" placeholder="Текст кнопки">
+                                        <span style="font-size:11px; color:#f9e2af; width:45px;">Кнопка ${idx+1}:</span>
+                                        <input type="text" class="field-btn-item" value="${bText}" placeholder="Текст">
                                         <button class="btn-del" onclick="this.parentElement.remove()">✕</button>
                                     `;
                                     container.appendChild(row);
@@ -301,7 +312,7 @@
     }
 
     async function deployBot() {
-        const token = document.getElementById('botToken').value.trim();
+        const token = document.getElementById('botToken'].value.trim();
         if (!token) return alert('Укажите токен!');
 
         const rawGraph = editor.export();
