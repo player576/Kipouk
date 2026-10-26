@@ -58,7 +58,6 @@ def build_dynamic_keyboard(buttons_list, btn_type, node_id):
     if btn_type == "inline":
         inline_keyboard = []
         for idx, btn_text in enumerate(buttons_list):
-            # Каждая кнопка привязывается к своему output индексу (output_1, output_2 и т.д.)
             output_num = idx + 1
             inline_keyboard.append([{
                 "text": btn_text,
@@ -75,7 +74,7 @@ def replace_vars(text: str, user_vars: dict) -> str:
         text = pattern.sub(str(var_val), text)
     return text
 
-def get_node_connection_by_output(node, output_name):
+def get_node_connection_by_output(node, output_name="output_1"):
     outs = node.get("outputs", {}).get(output_name, {}).get("connections", [])
     if outs:
         return outs[0].get("node")
@@ -96,7 +95,7 @@ def extract_file_id_from_message(msg: dict) -> str:
         return msg["sticker"]["file_id"]
     return ""
 
-def process_node_execution(token, chat_id, node_id, drawflow_data, output_name="output_1"):
+def process_node_execution(token, chat_id, node_id, drawflow_data):
     node = drawflow_data.get(node_id)
     if not node:
         return
@@ -123,6 +122,12 @@ def process_node_execution(token, chat_id, node_id, drawflow_data, output_name="
             payload["reply_markup"] = markup
 
         requests.post(send_url, json=payload)
+
+        # ЕСЛИ КНОПОК НЕТ: сразу автоматически переходим к следующему блоку по output_1
+        if not buttons_list:
+            next_id = get_node_connection_by_output(node, "output_1")
+            if next_id:
+                process_node_execution(token, chat_id, next_id, drawflow_data)
 
     elif b_type in ["input_var", "get_file_id"]:
         send_url = f"https://api.telegram.org/bot{token}/sendMessage"
@@ -179,7 +184,6 @@ async def handle_webhook(token: str, request: Request):
         elif "callback_query" in data:
             chat_id = str(data["callback_query"]["message"]["chat"]["id"])
             callback_data = data["callback_query"].get("data", "")
-            # Формат callback_data: btn_<node_id>_<output_num>
             if callback_data.startswith("btn_"):
                 parts = callback_data.split("_")
                 if len(parts) >= 3:
@@ -192,7 +196,6 @@ async def handle_webhook(token: str, request: Request):
                 USER_DATA[chat_id] = {}
 
             if target_node_id:
-                # Пользователь нажал кнопку: переходим по конкретному кружку-выходу этой кнопки
                 next_id = get_node_connection_by_output(drawflow_data.get(target_node_id), output_port)
                 if next_id:
                     process_node_execution(token, chat_id, next_id, drawflow_data)
@@ -231,7 +234,6 @@ async def handle_webhook(token: str, request: Request):
                             break
                     
                     elif b_type == "message":
-                        # Поддержка Reply-кнопок (внизу экрана) по текстовому совпадению
                         buttons_list = node.get("custom_buttons_list", [])
                         for idx, btn_text in enumerate(buttons_list):
                             if normalize_cmd(btn_text) == clean_input:
