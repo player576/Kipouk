@@ -21,13 +21,17 @@
         .btn-add:hover { background: #45475a; }
         #drawflow { width: 100%; height: 100%; background: #11111b; }
         
-        .drawflow .drawflow-node { background: #1e1e2e; border: 2px solid #89b4fa; color: #fff; border-radius: 8px; width: 280px; padding: 12px; }
+        .drawflow .drawflow-node { background: #1e1e2e; border: 2px solid #89b4fa; color: #fff; border-radius: 8px; width: 300px; padding: 12px; }
         .drawflow .drawflow-node.trigger-node { border-color: #f38ba8; }
         .drawflow .drawflow-node.input-node { border-color: #a6e3a1; }
         .drawflow .drawflow-node.media-node { border-color: #f9e2af; }
         .drawflow .drawflow-node.getid-node { border-color: #cba6f7; }
         .drawflow .drawflow-node label { font-size: 11px; color: #a6adc8; display: block; margin-top: 6px; }
         .drawflow .drawflow-node .input, .drawflow .drawflow-node .output { background: #89b4fa; width: 14px; height: 14px; }
+        
+        .btn-row { display: flex; gap: 5px; margin-top: 5px; align-items: center; }
+        .btn-row input { margin-top: 0 !important; }
+        .btn-del { background: #f38ba8; color: #111; padding: 6px 10px; font-size: 12px; border-radius: 6px; border: none; cursor: pointer; }
     </style>
 </head>
 <body>
@@ -60,10 +64,10 @@
     const editor = new Drawflow(id);
     editor.start();
 
-    // Создаем начальный блок при старте
+    // Создаем начальный блок с триггером /start при старте
     addTriggerNode(50, 100, "/start");
 
-    function addTriggerNode(x = 100, y = 100, defaultVal = "") {
+    function addTriggerNode(x = 100, y = 100, defaultVal = "/start") {
         editor.addNode('trigger', 0, 1, x, y, 'trigger-node', {}, `
             <div class="node-content" data-type="trigger">
                 <b style="color:#f38ba8">⚡ Триггер (Команда)</b>
@@ -73,23 +77,59 @@
         `);
     }
 
-    function addMessageNode(x = 380, y = 100, textVal = "", typeVal = "inline", btnVal = "") {
-        editor.addNode('message', 1, 1, x, y, 'message-node', {}, `
+    function addMessageNode(x = 380, y = 100, textVal = "", typeVal = "inline", buttonsArr = []) {
+        let buttonsHtml = '';
+        if (buttonsArr && buttonsArr.length > 0) {
+            buttonsArr.forEach((bText, idx) => {
+                buttonsHtml += `
+                    <div class="btn-row">
+                        <span style="font-size:11px; color:#89b4fa; width:55px;">Выход ${idx+2}:</span>
+                        <input type="text" class="field-btn-item" value="${bText}" placeholder="Текст кнопки">
+                        <button class="btn-del" onclick="this.parentElement.remove()">✕</button>
+                    </div>`;
+            });
+        }
+
+        const nodeHtml = `
             <div class="node-content" data-type="message">
                 <b style="color:#89b4fa">💬 Сообщение</b>
+                <div style="font-size:10px; color:#a6e3a1; margin-bottom:4px;">🟢 Выход 1: Основной переход</div>
+                
                 <label>Текст (можно {имя}):</label>
                 <textarea class="field-text" rows="2" placeholder="Привет!">${textVal}</textarea>
-                
-                <label>Кнопки (через запятую):</label>
-                <input type="text" class="field-btn" placeholder="Кнопка 1, Кнопка 2" value="${btnVal}">
                 
                 <label>Тип кнопок:</label>
                 <select class="field-type">
                     <option value="inline" ${typeVal==='inline'?'selected':''}>С дропом (Inline)</option>
                     <option value="reply" ${typeVal==='reply'?'selected':''}>Без дропа (Меню внизу)</option>
                 </select>
+
+                <label style="margin-top:8px;">Индивидуальные кнопки (ветки 2-5):</label>
+                <div class="buttons-container">
+                    ${buttonsHtml}
+                </div>
+                <button class="btn-secondary" style="width:100%; margin-top:6px; font-size:12px;" onclick="addNodeButton(this)">➕ Добавить кнопку</button>
             </div>
-        `);
+        `;
+
+        // Создаем блок сообщения с 5 выходами: 1 основной + 4 под отдельные кнопки
+        editor.addNode('message', 1, 5, x, y, 'message-node', {}, nodeHtml);
+    }
+
+    function addNodeButton(btnEl) {
+        const container = btnEl.parentElement.querySelector('.buttons-container');
+        const count = container.children.length;
+        if (count >= 4) {
+            return alert("Максимум можно добавить 4 отдельные кнопки!");
+        }
+        const row = document.createElement('div');
+        row.className = 'btn-row';
+        row.innerHTML = `
+            <span style="font-size:11px; color:#89b4fa; width:55px;">Выход ${count+2}:</span>
+            <input type="text" class="field-btn-item" placeholder="Текст кнопки">
+            <button class="btn-del" onclick="this.parentElement.remove()">✕</button>
+        `;
+        container.appendChild(row);
     }
 
     function addInputNode(x = 380, y = 280, textVal = "", varVal = "имя") {
@@ -140,7 +180,6 @@
         `);
     }
 
-    // Экспорт проекта в .kipouk
     function exportProject() {
         const rawGraph = editor.export();
         const nodesData = rawGraph.drawflow.Home.data;
@@ -151,7 +190,6 @@
                 const trg = nodeEl.querySelector('.field-trigger');
                 const txt = nodeEl.querySelector('.field-text');
                 const varName = nodeEl.querySelector('.field-var');
-                const btn = nodeEl.querySelector('.field-btn');
                 const typ = nodeEl.querySelector('.field-type');
                 const mediaType = nodeEl.querySelector('.field-media-type');
                 const mediaUrl = nodeEl.querySelector('.field-url');
@@ -159,15 +197,17 @@
                 if (trg) node.val_trigger = trg.value;
                 if (txt) node.val_text = txt.value;
                 if (varName) node.val_var = varName.value;
-                if (btn) node.val_btn = btn.value;
                 if (typ) node.val_type = typ.value;
                 if (mediaType) node.val_media_type = mediaType.value;
                 if (mediaUrl) node.val_media_url = mediaUrl.value;
+
+                const btnInputs = nodeEl.querySelectorAll('.field-btn-item');
+                node.val_buttons = Array.from(btnInputs).map(i => i.value.trim()).filter(b => b.length > 0);
             }
         }
 
         const projectData = {
-            version: "1.4",
+            version: "1.5",
             app: "Kipouk",
             token: document.getElementById('botToken').value,
             graph: rawGraph
@@ -184,7 +224,6 @@
         URL.revokeObjectURL(url);
     }
 
-    // Импорт проекта из .kipouk
     function importProject(event) {
         const file = event.target.files[0];
         if (!file) return;
@@ -204,11 +243,27 @@
                     const nodesData = projectData.graph.drawflow.Home.data;
                     for (const [nodeId, node] of Object.entries(nodesData)) {
                         const nodeEl = document.getElementById(`node-${nodeId}`);
+                        if (nodeEl && node.block_type === 'message') {
+                            const container = nodeEl.querySelector('.buttons-container');
+                            if (container && node.val_buttons) {
+                                container.innerHTML = '';
+                                node.val_buttons.forEach((bText, idx) => {
+                                    const row = document.createElement('div');
+                                    row.className = 'btn-row';
+                                    row.innerHTML = `
+                                        <span style="font-size:11px; color:#89b4fa; width:55px;">Выход ${idx+2}:</span>
+                                        <input type="text" class="field-btn-item" value="${bText}" placeholder="Текст кнопки">
+                                        <button class="btn-del" onclick="this.parentElement.remove()">✕</button>
+                                    `;
+                                    container.appendChild(row);
+                                });
+                            }
+                        }
+
                         if (nodeEl) {
                             const trg = nodeEl.querySelector('.field-trigger');
                             const txt = nodeEl.querySelector('.field-text');
                             const varName = nodeEl.querySelector('.field-var');
-                            const btn = nodeEl.querySelector('.field-btn');
                             const typ = nodeEl.querySelector('.field-type');
                             const mediaType = nodeEl.querySelector('.field-media-type');
                             const mediaUrl = nodeEl.querySelector('.field-url');
@@ -216,7 +271,6 @@
                             if (trg && node.val_trigger !== undefined) trg.value = node.val_trigger;
                             if (txt && node.val_text !== undefined) txt.value = node.val_text;
                             if (varName && node.val_var !== undefined) varName.value = node.val_var;
-                            if (btn && node.val_btn !== undefined) btn.value = node.val_btn;
                             if (typ && node.val_type !== undefined) typ.value = node.val_type;
                             if (mediaType && node.val_media_type !== undefined) mediaType.value = node.val_media_type;
                             if (mediaUrl && node.val_media_url !== undefined) mediaUrl.value = node.val_media_url;
@@ -266,7 +320,6 @@
                 const trg = nodeEl.querySelector('.field-trigger');
                 const txt = nodeEl.querySelector('.field-text');
                 const varName = nodeEl.querySelector('.field-var');
-                const btn = nodeEl.querySelector('.field-btn');
                 const typ = nodeEl.querySelector('.field-type');
                 const mediaType = nodeEl.querySelector('.field-media-type');
                 const mediaUrl = nodeEl.querySelector('.field-url');
@@ -275,12 +328,15 @@
                 node.custom_trigger = trg ? trg.value.trim() : "";
                 node.custom_text = txt ? txt.value : "";
                 node.custom_var = varName ? varName.value.trim() : "";
-                node.custom_btn = btn ? btn.value.trim() : "";
                 node.custom_type = typ ? typ.value : "inline";
                 
                 const mType = mediaType ? mediaType.value : "document";
                 node.custom_media_type = mType;
                 
+                const btnInputs = nodeEl.querySelectorAll('.field-btn-item');
+                const buttonsList = Array.from(btnInputs).map(i => i.value.trim()).filter(b => b.length > 0);
+                node.custom_buttons_list = buttonsList;
+
                 let finalMediaUrl = mediaUrl ? mediaUrl.value.trim() : "";
                 if (fileInput && fileInput.files[0]) {
                     try {
