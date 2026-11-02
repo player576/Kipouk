@@ -123,7 +123,7 @@ def process_node_execution(token, chat_id, node_id, drawflow_data):
 
         requests.post(send_url, json=payload)
 
-        # ЕСЛИ КНОПОК НЕТ: сразу автоматически переходим к следующему блоку по output_1
+        # Если кнопок нет вообще — сразу автоматически идем по output_1 к следующему блоку
         if not buttons_list:
             next_id = get_node_connection_by_output(node, "output_1")
             if next_id:
