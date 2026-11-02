@@ -111,33 +111,103 @@
             </div>
         `;
 
-        // Если кнопок нет — ровно 1 выход. Если есть — по количеству кнопок.
         const initialOutputs = Math.max(1, buttonsArr.length);
         editor.addNode('message', 1, initialOutputs, x, y, 'message-node', {}, nodeHtml);
     }
 
-    function addNodeButton(btnEl) {
-        const container = btnEl.parentElement.querySelector('.buttons-container');
-        const count = container.children.length;
-        if (count >= 4) {
-            return alert("Максимум можно добавить 4 кнопки!");
-        }
+    // Сохраняем состояние холста перед перерисовкой портов
+    function getCanvasState() {
+        const rawGraph = editor.export();
+        const nodesData = rawGraph.drawflow.Home.data;
+        const state = {};
+        for (const [nodeId, node] of Object.entries(nodesData)) {
+            const nodeEl = document.getElementById(`node-${nodeId}`);
+            if (nodeEl) {
+                const trg = nodeEl.querySelector('.field-trigger');
+                const txt = nodeEl.querySelector('.field-text');
+                const varName = nodeEl.querySelector('.field-var');
+                const typ = nodeEl.querySelector('.field-type');
+                const mediaType = nodeEl.querySelector('.field-media-type');
+                const mediaUrl = nodeEl.querySelector('.field-url');
+                const btnInputs = nodeEl.querySelectorAll('.field-btn-item');
 
+                state[nodeId] = {
+                    val_trigger: trg ? trg.value : "",
+                    val_text: txt ? txt.value : "",
+                    val_var: varName ? varName.value : "",
+                    val_type: typ ? typ.value : "inline",
+                    val_media_type: mediaType ? mediaType.value : "document",
+                    val_media_url: mediaUrl ? mediaUrl.value : "",
+                    val_buttons: Array.from(btnInputs).map(i => i.value)
+                };
+            }
+        }
+        return { graph: rawGraph, state };
+    }
+
+    // Восстанавливаем состояние полей после перерисовки
+    function restoreCanvasState(state) {
+        setTimeout(() => {
+            for (const [nodeId, data] of Object.entries(state)) {
+                const nodeEl = document.getElementById(`node-${nodeId}`);
+                if (nodeEl) {
+                    const trg = nodeEl.querySelector('.field-trigger');
+                    const txt = nodeEl.querySelector('.field-text');
+                    const varName = nodeEl.querySelector('.field-var');
+                    const typ = nodeEl.querySelector('.field-type');
+                    const mediaType = nodeEl.querySelector('.field-media-type');
+                    const mediaUrl = nodeEl.querySelector('.field-url');
+
+                    if (trg && data.val_trigger !== undefined) trg.value = data.val_trigger;
+                    if (txt && data.val_text !== undefined) txt.value = data.val_text;
+                    if (varName && data.val_var !== undefined) varName.value = data.val_var;
+                    if (typ && data.val_type !== undefined) typ.value = data.val_type;
+                    if (mediaType && data.val_media_type !== undefined) mediaType.value = data.val_media_type;
+                    if (mediaUrl && data.val_media_url !== undefined) mediaUrl.value = data.val_media_url;
+
+                    const container = nodeEl.querySelector('.buttons-container');
+                    if (container && data.val_buttons) {
+                        container.innerHTML = '';
+                        data.val_buttons.forEach((bText, idx) => {
+                            const row = document.createElement('div');
+                            row.className = 'btn-row';
+                            row.innerHTML = `
+                                <span style="font-size:10px; color:#f9e2af; width:65px;">Кнопка ${idx+1}:</span>
+                                <input type="text" class="field-btn-item" value="${bText}" placeholder="Текст кнопки">
+                                <button class="btn-del" onclick="removeNodeButton(this)">✕</button>
+                            `;
+                            container.appendChild(row);
+                        });
+                    }
+                }
+            }
+        }, 30);
+    }
+
+    function addNodeButton(btnEl) {
         const nodeEl = btnEl.closest('.drawflow-node');
         const nodeId = nodeEl.id.replace('node-', '');
 
-        // Добавляем новый выход в Drawflow
-        editor.addOutput(nodeId);
+        const { graph, state } = getCanvasState();
+        if (!state[nodeId]) state[nodeId] = { val_buttons: [] };
+        if (!state[nodeId].val_buttons) state[nodeId].val_buttons = [];
 
-        const newIndex = container.children.length;
-        const row = document.createElement('div');
-        row.className = 'btn-row';
-        row.innerHTML = `
-            <span style="font-size:10px; color:#f9e2af; width:65px;">Кнопка ${newIndex+1}:</span>
-            <input type="text" class="field-btn-item" placeholder="Текст кнопки">
-            <button class="btn-del" onclick="removeNodeButton(this)">✕</button>
-        `;
-        container.appendChild(row);
+        if (state[nodeId].val_buttons.length >= 4) {
+            return alert("Максимум можно добавить 4 кнопки!");
+        }
+
+        state[nodeId].val_buttons.push(""); // добавляем пустую кнопку
+
+        const node = graph.drawflow.Home.data[nodeId];
+        const newCount = state[nodeId].val_buttons.length;
+        node.outputs = {};
+        for (let i = 1; i <= newCount; i++) {
+            node.outputs[`output_${i}`] = { connections: [] };
+        }
+
+        editor.clear();
+        editor.import(graph);
+        restoreCanvasState(state);
     }
 
     function removeNodeButton(delBtn) {
@@ -145,13 +215,23 @@
         const container = row.parentElement;
         const nodeEl = delBtn.closest('.drawflow-node');
         const nodeId = nodeEl.id.replace('node-', '');
-
         const rowIndex = Array.from(container.children).indexOf(row);
-        row.remove();
 
-        try {
-            editor.removeOutput(nodeId, 'output_' + (rowIndex + 1));
-        } catch(e) {}
+        const { graph, state } = getCanvasState();
+        if (state[nodeId] && state[nodeId].val_buttons) {
+            state[nodeId].val_buttons.splice(rowIndex, 1);
+        }
+
+        const node = graph.drawflow.Home.data[nodeId];
+        const newCount = Math.max(1, state[nodeId].val_buttons.length);
+        node.outputs = {};
+        for (let i = 1; i <= newCount; i++) {
+            node.outputs[`output_${i}`] = { connections: [] };
+        }
+
+        editor.clear();
+        editor.import(graph);
+        restoreCanvasState(state);
     }
 
     function addInputNode(x = 380, y = 280, textVal = "", varVal = "имя") {
@@ -203,36 +283,25 @@
     }
 
     function exportProject() {
-        const rawGraph = editor.export();
-        const nodesData = rawGraph.drawflow.Home.data;
-
-        for (const [nodeId, node] of Object.entries(nodesData)) {
-            const nodeEl = document.getElementById(`node-${nodeId}`);
-            if (nodeEl) {
-                const trg = nodeEl.querySelector('.field-trigger');
-                const txt = nodeEl.querySelector('.field-text');
-                const varName = nodeEl.querySelector('.field-var');
-                const typ = nodeEl.querySelector('.field-type');
-                const mediaType = nodeEl.querySelector('.field-media-type');
-                const mediaUrl = nodeEl.querySelector('.field-url');
-
-                if (trg) node.val_trigger = trg.value;
-                if (txt) node.val_text = txt.value;
-                if (varName) node.val_var = varName.value;
-                if (typ) node.val_type = typ.value;
-                if (mediaType) node.val_media_type = mediaType.value;
-                if (mediaUrl) node.val_media_url = mediaUrl.value;
-
-                const btnInputs = nodeEl.querySelectorAll('.field-btn-item');
-                node.val_buttons = Array.from(btnInputs).map(i => i.value.trim()).filter(b => b.length > 0);
+        const { graph, state } = getCanvasState();
+        for (const [nodeId, data] of Object.entries(state)) {
+            const node = graph.drawflow.Home.data[nodeId];
+            if (node) {
+                node.val_trigger = data.val_trigger;
+                node.val_text = data.val_text;
+                node.val_var = data.val_var;
+                node.val_type = data.val_type;
+                node.val_media_type = data.val_media_type;
+                node.val_media_url = data.val_media_url;
+                node.val_buttons = data.val_buttons;
             }
         }
 
         const projectData = {
-            version: "1.8",
+            version: "1.9",
             app: "Kipouk",
             token: document.getElementById('botToken').value,
-            graph: rawGraph
+            graph: graph
         };
 
         const jsonStr = JSON.stringify(projectData, null, 2);
@@ -254,7 +323,7 @@
         reader.onload = function(e) {
             try {
                 const projectData = JSON.parse(e.target.result);
-                if (projectData.app !== "Kipouk") return alert("Неверный формат файла .kipouk!");
+                if (projectData.app !== "Kipouk") return alert("Неверный файл .kipouk!");
 
                 if (projectData.token) document.getElementById('botToken').value = projectData.token;
 
@@ -263,42 +332,20 @@
 
                 setTimeout(() => {
                     const nodesData = projectData.graph.drawflow.Home.data;
+                    const state = {};
                     for (const [nodeId, node] of Object.entries(nodesData)) {
-                        const nodeEl = document.getElementById(`node-${nodeId}`);
-                        if (nodeEl && node.block_type === 'message') {
-                            const container = nodeEl.querySelector('.buttons-container');
-                            if (container && node.val_buttons) {
-                                container.innerHTML = '';
-                                node.val_buttons.forEach((bText, idx) => {
-                                    const row = document.createElement('div');
-                                    row.className = 'btn-row';
-                                    row.innerHTML = `
-                                        <span style="font-size:10px; color:#f9e2af; width:65px;">Кнопка ${idx+1}:</span>
-                                        <input type="text" class="field-btn-item" value="${bText}" placeholder="Текст кнопки">
-                                        <button class="btn-del" onclick="removeNodeButton(this)">✕</button>
-                                    `;
-                                    container.appendChild(row);
-                                });
-                            }
-                        }
-
-                        if (nodeEl) {
-                            const trg = nodeEl.querySelector('.field-trigger');
-                            const txt = nodeEl.querySelector('.field-text');
-                            const varName = nodeEl.querySelector('.field-var');
-                            const typ = nodeEl.querySelector('.field-type');
-                            const mediaType = nodeEl.querySelector('.field-media-type');
-                            const mediaUrl = nodeEl.querySelector('.field-url');
-
-                            if (trg && node.val_trigger !== undefined) trg.value = node.val_trigger;
-                            if (txt && node.val_text !== undefined) txt.value = node.val_text;
-                            if (varName && node.val_var !== undefined) varName.value = node.val_var;
-                            if (typ && node.val_type !== undefined) typ.value = node.val_type;
-                            if (mediaType && node.val_media_type !== undefined) mediaType.value = node.val_media_type;
-                            if (mediaUrl && node.val_media_url !== undefined) mediaUrl.value = node.val_media_url;
-                        }
+                        state[nodeId] = {
+                            val_trigger: node.val_trigger || "",
+                            val_text: node.val_text || "",
+                            val_var: node.val_var || "",
+                            val_type: node.val_type || "inline",
+                            val_media_type: node.val_media_type || "document",
+                            val_media_url: node.val_media_url || "",
+                            val_buttons: node.val_buttons || []
+                        };
                     }
-                }, 100);
+                    restoreCanvasState(state);
+                }, 50);
 
                 alert("Проект успешно загружен!");
             } catch (err) {
@@ -329,45 +376,27 @@
         const token = document.getElementById('botToken').value.trim();
         if (!token) return alert('Укажите токен!');
 
-        const rawGraph = editor.export();
-        const nodesData = rawGraph.drawflow.Home.data;
+        const { graph, state } = getCanvasState();
+        for (const [nodeId, data] of Object.entries(state)) {
+            const node = graph.drawflow.Home.data[nodeId];
+            if (node) {
+                node.block_type = document.querySelector(`#node-${nodeId} .node-content`)?.getAttribute('data-type') || 'message';
+                node.custom_trigger = data.val_trigger;
+                node.custom_text = data.val_text;
+                node.custom_var = data.val_var;
+                node.custom_type = data.val_type;
+                node.custom_media_type = data.val_media_type;
+                node.custom_buttons_list = data.val_buttons;
+                node.custom_media_url = data.val_media_url;
 
-        for (const [nodeId, node] of Object.entries(nodesData)) {
-            const nodeEl = document.getElementById(`node-${nodeId}`);
-            if (nodeEl) {
-                const contentEl = nodeEl.querySelector('.node-content');
-                const nodeType = contentEl ? contentEl.getAttribute('data-type') : 'message';
-                node.block_type = nodeType;
-                
-                const trg = nodeEl.querySelector('.field-trigger');
-                const txt = nodeEl.querySelector('.field-text');
-                const varName = nodeEl.querySelector('.field-var');
-                const typ = nodeEl.querySelector('.field-type');
-                const mediaType = nodeEl.querySelector('.field-media-type');
-                const mediaUrl = nodeEl.querySelector('.field-url');
-                const fileInput = nodeEl.querySelector('.field-file');
-
-                node.custom_trigger = trg ? trg.value.trim() : "";
-                node.custom_text = txt ? txt.value : "";
-                node.custom_var = varName ? varName.value.trim() : "";
-                node.custom_type = typ ? typ.value : "inline";
-                
-                const mType = mediaType ? mediaType.value : "document";
-                node.custom_media_type = mType;
-                
-                const btnInputs = nodeEl.querySelectorAll('.field-btn-item');
-                const buttonsList = Array.from(btnInputs).map(i => i.value.trim()).filter(b => b.length > 0);
-                node.custom_buttons_list = buttonsList;
-
-                let finalMediaUrl = mediaUrl ? mediaUrl.value.trim() : "";
+                const fileInput = document.querySelector(`#node-${nodeId} .field-file`);
                 if (fileInput && fileInput.files[0]) {
                     try {
-                        finalMediaUrl = await uploadToTelegram(token, fileInput.files[0], mType);
+                        node.custom_media_url = await uploadToTelegram(token, fileInput.files[0], data.val_media_type);
                     } catch (err) {
                         return alert(`Ошибка файла: ` + err.message);
                     }
                 }
-                node.custom_media_url = finalMediaUrl;
             }
         }
 
@@ -375,7 +404,7 @@
             const res = await fetch('/api/start-bot', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ token: token, graph: rawGraph })
+                body: JSON.stringify({ token: token, graph: graph })
             });
 
             const data = await res.json();
