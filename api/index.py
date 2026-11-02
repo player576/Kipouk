@@ -95,7 +95,11 @@ def extract_file_id_from_message(msg: dict) -> str:
         return msg["sticker"]["file_id"]
     return ""
 
-def process_node_execution(token, chat_id, node_id, drawflow_data):
+def process_node_execution(token, chat_id, node_id, drawflow_data, step_count=0):
+    # ЗАЩИТА ОТ ЦИКЛОВ И СПАМА: не более 5 авто-переходов подряд
+    if step_count > 5:
+        return
+
     node = drawflow_data.get(node_id)
     if not node:
         return
@@ -105,7 +109,7 @@ def process_node_execution(token, chat_id, node_id, drawflow_data):
     if b_type == "trigger":
         next_id = get_node_connection_by_output(node, "output_1")
         if next_id:
-            process_node_execution(token, chat_id, next_id, drawflow_data)
+            process_node_execution(token, chat_id, next_id, drawflow_data, step_count + 1)
         return
 
     elif b_type == "message":
@@ -123,11 +127,11 @@ def process_node_execution(token, chat_id, node_id, drawflow_data):
 
         requests.post(send_url, json=payload)
 
-        # Если кнопок нет вообще — сразу автоматически идем по output_1 к следующему блоку
+        # Автоматический переход дальше только если нет кнопок
         if not buttons_list:
             next_id = get_node_connection_by_output(node, "output_1")
             if next_id:
-                process_node_execution(token, chat_id, next_id, drawflow_data)
+                process_node_execution(token, chat_id, next_id, drawflow_data, step_count + 1)
 
     elif b_type in ["input_var", "get_file_id"]:
         send_url = f"https://api.telegram.org/bot{token}/sendMessage"
@@ -162,8 +166,8 @@ def process_node_execution(token, chat_id, node_id, drawflow_data):
 
         next_id = get_node_connection_by_output(node, "output_1")
         if next_id:
-            process_node_execution(token, chat_id, next_id, drawflow_data)
-
+            process_node_execution(token, chat_id, next_id, drawflow_data, step_count + 1)
+            
 @app.post("/api/webhook/{token}")
 async def handle_webhook(token: str, request: Request):
     try:
