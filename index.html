@@ -26,6 +26,7 @@
         .drawflow .drawflow-node.input-node { border-color: #a6e3a1; }
         .drawflow .drawflow-node.media-node { border-color: #f9e2af; }
         .drawflow .drawflow-node.getid-node { border-color: #cba6f7; }
+        .drawflow .drawflow-node.end-node { border-color: #f38ba8; background: #2a1b22; }
         .drawflow .drawflow-node label { font-size: 11px; color: #a6adc8; display: block; margin-top: 6px; }
         .drawflow .drawflow-node .input, .drawflow .drawflow-node .output { background: #89b4fa; width: 14px; height: 14px; }
         
@@ -39,14 +40,14 @@
 <header>
     <h3 style="margin: 0; color: #89b4fa;">Kipouk</h3>
     <input type="text" id="botToken" placeholder="Токен бота Telegram" style="margin-top:0; width:220px;">
-    <input type="text" id="gasUrl" placeholder="В разработке" style="margin-top:0; width:240px;">
+    <input type="text" id="gasUrl" placeholder="URL Web App Google Script" style="margin-top:0; width:240px;">
     
     <button class="btn-secondary" onclick="exportProject()">💾 Сохранить</button>
     <button class="btn-secondary" onclick="document.getElementById('importFile').click()">📂 Загрузить</button>
     <input type="file" id="importFile" accept=".kipouk" style="display:none;" onchange="importProject(event)">
 
     <button onclick="deployBot()">Запустить локально</button>
-    <button class="btn-secondary" onclick="deploy247()" style="background:#a6e3a1; color:#111;">🚀 Kipouk 24/7 В разработка</button>
+    <button class="btn-secondary" onclick="deploy247()" style="background:#a6e3a1; color:#111;">🚀 Kipouk 24/7</button>
 </header>
 
 <main>
@@ -57,6 +58,7 @@
         <button class="btn-add" onclick="addInputNode()">📥 Блок Ввод переменной</button>
         <button class="btn-add" onclick="addMediaNode()">🖼️ Блок Фото / Файл</button>
         <button class="btn-add" style="border-color:#cba6f7; color:#cba6f7;" onclick="addGetIdNode()">🔍 Получить File ID</button>
+        <button class="btn-add" style="border-color:#f38ba8; color:#f38ba8;" onclick="addEndNode()">🛑 Блок Конец</button>
     </div>
     <div id="drawflow"></div>
 </main>
@@ -115,6 +117,63 @@
 
         const initialOutputs = Math.max(1, buttonsArr.length);
         editor.addNode('message', 1, initialOutputs, x, y, 'message-node', {}, nodeHtml);
+    }
+
+    function addInputNode(x = 380, y = 280, textVal = "", varVal = "имя") {
+        editor.addNode('input_var', 1, 1, x, y, 'input-node', {}, `
+            <div class="node-content" data-type="input_var">
+                <b style="color:#a6e3a1">📥 Ввод переменной</b>
+                <label>Вопрос пользователю:</label>
+                <textarea class="field-text" rows="2" placeholder="Как тебя зовут?">${textVal}</textarea>
+                
+                <label>Имя переменной:</label>
+                <input type="text" class="field-var" placeholder="имя" value="${varVal}">
+            </div>
+        `);
+    }
+
+    function addMediaNode(x = 380, y = 460, mediaUrlVal = "", mediaTypeVal = "document", captionVal = "") {
+        editor.addNode('media', 1, 1, x, y, 'media-node', {}, `
+            <div class="node-content" data-type="media">
+                <b style="color:#f9e2af">🖼️ Файл с ПК / File ID / Переменная</b>
+                <label>Выберите файл с ПК:</label>
+                <input type="file" class="field-file">
+                
+                <label>ИЛИ ссылка / File ID / переменная:</label>
+                <input type="text" class="field-url" placeholder="https://..., File ID или {file_id}" value="${mediaUrlVal}">
+
+                <label>Тип отправки:</label>
+                <select class="field-media-type">
+                    <option value="document" ${mediaTypeVal==='document'?'selected':''}>Документ / Файл</option>
+                    <option value="photo" ${mediaTypeVal==='photo'?'selected':''}>Фотография</option>
+                </select>
+
+                <label>Подпись:</label>
+                <textarea class="field-text" rows="2" placeholder="Лови файл!">${captionVal}</textarea>
+            </div>
+        `);
+    }
+
+    function addGetIdNode(x = 380, y = 640, textVal = "", varVal = "file_id") {
+        editor.addNode('get_file_id', 1, 1, x, y, 'getid-node', {}, `
+            <div class="node-content" data-type="get_file_id">
+                <b style="color:#cba6f7">🔍 Получить File ID</b>
+                <label>Запрос к пользователю:</label>
+                <textarea class="field-text" rows="2" placeholder="Отправьте мне любой файл...">${textVal}</textarea>
+                
+                <label>Сохранить ID в переменную:</label>
+                <input type="text" class="field-var" placeholder="file_id" value="${varVal}">
+            </div>
+        `);
+    }
+
+    function addEndNode(x = 680, y = 100) {
+        editor.addNode('end', 1, 0, x, y, 'end-node', {}, `
+            <div class="node-content" data-type="end">
+                <b style="color:#f38ba8">🛑 Конец цепочки</b>
+                <label>Точка останова бота</label>
+            </div>
+        `);
     }
 
     function getCanvasState() {
@@ -232,54 +291,6 @@
         editor.clear();
         editor.import(graph);
         restoreCanvasState(state);
-    }
-
-    function addInputNode(x = 380, y = 280, textVal = "", varVal = "имя") {
-        editor.addNode('input_var', 1, 1, x, y, 'input-node', {}, `
-            <div class="node-content" data-type="input_var">
-                <b style="color:#a6e3a1">📥 Ввод переменной</b>
-                <label>Вопрос пользователю:</label>
-                <textarea class="field-text" rows="2" placeholder="Как тебя зовут?">${textVal}</textarea>
-                
-                <label>Имя переменной:</label>
-                <input type="text" class="field-var" placeholder="имя" value="${varVal}">
-            </div>
-        `);
-    }
-
-    function addMediaNode(x = 380, y = 460, mediaUrlVal = "", mediaTypeVal = "document", captionVal = "") {
-        editor.addNode('media', 1, 1, x, y, 'media-node', {}, `
-            <div class="node-content" data-type="media">
-                <b style="color:#f9e2af">🖼️ Файл с ПК / File ID / Переменная</b>
-                <label>Выберите файл с ПК:</label>
-                <input type="file" class="field-file">
-                
-                <label>ИЛИ ссылка / File ID / переменная:</label>
-                <input type="text" class="field-url" placeholder="https://..., File ID или {file_id}" value="${mediaUrlVal}">
-
-                <label>Тип отправки:</label>
-                <select class="field-media-type">
-                    <option value="document" ${mediaTypeVal==='document'?'selected':''}>Документ / Файл</option>
-                    <option value="photo" ${mediaTypeVal==='photo'?'selected':''}>Фотография</option>
-                </select>
-
-                <label>Подпись:</label>
-                <textarea class="field-text" rows="2" placeholder="Лови файл!">${captionVal}</textarea>
-            </div>
-        `);
-    }
-
-    function addGetIdNode(x = 380, y = 640, textVal = "", varVal = "file_id") {
-        editor.addNode('get_file_id', 1, 1, x, y, 'getid-node', {}, `
-            <div class="node-content" data-type="get_file_id">
-                <b style="color:#cba6f7">🔍 Получить File ID</b>
-                <label>Запрос к пользователю:</label>
-                <textarea class="field-text" rows="2" placeholder="Отправьте мне любой файл...">${textVal}</textarea>
-                
-                <label>Сохранить ID в переменную:</label>
-                <input type="text" class="field-var" placeholder="file_id" value="${varVal}">
-            </div>
-        `);
     }
 
     function exportProject() {
