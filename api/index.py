@@ -106,7 +106,11 @@ def process_node_execution(token, chat_id, node_id, drawflow_data, step_count=0)
 
     b_type = node.get("block_type", "message")
     
-    if b_type == "trigger":
+    if b_type == "end":
+        # Конец цепочки — стоп-сигнал, останавливаем выполнение
+        return
+
+    elif b_type == "trigger":
         next_id = get_node_connection_by_output(node, "output_1")
         if next_id:
             process_node_execution(token, chat_id, next_id, drawflow_data, step_count + 1)
@@ -167,7 +171,7 @@ def process_node_execution(token, chat_id, node_id, drawflow_data, step_count=0)
         next_id = get_node_connection_by_output(node, "output_1")
         if next_id:
             process_node_execution(token, chat_id, next_id, drawflow_data, step_count + 1)
-            
+
 @app.post("/api/webhook/{token}")
 async def handle_webhook(token: str, request: Request):
     try:
