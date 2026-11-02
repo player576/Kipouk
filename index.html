@@ -8,7 +8,7 @@
     <style>
         * { box-sizing: border-box; font-family: 'Segoe UI', sans-serif; }
         body { margin: 0; background: #0f0f17; color: #fff; display: flex; flex-direction: column; height: 100vh; }
-        header { padding: 12px 20px; background: #181825; display: flex; gap: 12px; align-items: center; border-bottom: 1px solid #313244; }
+        header { padding: 12px 20px; background: #181825; display: flex; gap: 12px; align-items: center; border-bottom: 1px solid #313244; flex-wrap: wrap; }
         input[type="text"], select, textarea { background: #313244; border: 1px solid #45475a; padding: 6px; color: #fff; border-radius: 6px; width: 100%; margin-top: 4px; }
         input[type="file"] { margin-top: 6px; font-size: 12px; color: #a6adc8; width: 100%; }
         button { background: #89b4fa; border: none; padding: 8px 16px; font-weight: bold; border-radius: 6px; cursor: pointer; color: #11111b; }
@@ -38,13 +38,15 @@
 
 <header>
     <h3 style="margin: 0; color: #89b4fa;">Kipouk</h3>
-    <input type="text" id="botToken" placeholder="Токен бота Telegram" style="margin-top:0; width:280px;">
+    <input type="text" id="botToken" placeholder="Токен бота Telegram" style="margin-top:0; width:220px;">
+    <input type="text" id="gasUrl" placeholder="URL Web App Google Script" style="margin-top:0; width:240px;">
     
-    <button class="btn-secondary" onclick="exportProject()">💾 Сохранить (.kipouk)</button>
-    <button class="btn-secondary" onclick="document.getElementById('importFile').click()">📂 Загрузить (.kipouk)</button>
+    <button class="btn-secondary" onclick="exportProject()">💾 Сохранить</button>
+    <button class="btn-secondary" onclick="document.getElementById('importFile').click()">📂 Загрузить</button>
     <input type="file" id="importFile" accept=".kipouk" style="display:none;" onchange="importProject(event)">
 
-    <button onclick="deployBot()" style="margin-left: auto;">Запустить бота</button>
+    <button onclick="deployBot()">Запустить локально</button>
+    <button class="btn-secondary" onclick="deploy247()" style="background:#a6e3a1; color:#111;">🚀 Kipouk 24/7</button>
 </header>
 
 <main>
@@ -115,7 +117,6 @@
         editor.addNode('message', 1, initialOutputs, x, y, 'message-node', {}, nodeHtml);
     }
 
-    // Сохраняем состояние холста перед перерисовкой портов
     function getCanvasState() {
         const rawGraph = editor.export();
         const nodesData = rawGraph.drawflow.Home.data;
@@ -145,7 +146,6 @@
         return { graph: rawGraph, state };
     }
 
-    // Восстанавливаем состояние полей после перерисовки
     function restoreCanvasState(state) {
         setTimeout(() => {
             for (const [nodeId, data] of Object.entries(state)) {
@@ -196,7 +196,7 @@
             return alert("Максимум можно добавить 4 кнопки!");
         }
 
-        state[nodeId].val_buttons.push(""); // добавляем пустую кнопку
+        state[nodeId].val_buttons.push("");
 
         const node = graph.drawflow.Home.data[nodeId];
         const newCount = state[nodeId].val_buttons.length;
@@ -323,7 +323,7 @@
         reader.onload = function(e) {
             try {
                 const projectData = JSON.parse(e.target.result);
-                if (projectData.app !== "Kipouk") return alert("Неверный файл .kipouk!");
+                if (projectData.app !== "Kipouk") return alert("Неверный формат файла .kipouk!");
 
                 if (projectData.token) document.getElementById('botToken').value = projectData.token;
 
@@ -412,6 +412,43 @@
             else alert('Ошибка: ' + (data.message || 'Неизвестная ошибка'));
         } catch (e) {
             alert('Ошибка сервера при сохранении бота');
+        }
+    }
+
+    async function deploy247() {
+        const token = document.getElementById('botToken').value.trim();
+        const gasUrl = document.getElementById('gasUrl').value.trim();
+        if (!token) return alert('Укажите токен бота!');
+        if (!gasUrl) return alert('Укажите URL веб-приложения Google Apps Script!');
+
+        const { graph, state } = getCanvasState();
+        for (const [nodeId, data] of Object.entries(state)) {
+            const node = graph.drawflow.Home.data[nodeId];
+            if (node) {
+                node.block_type = document.querySelector(`#node-${nodeId} .node-content`)?.getAttribute('data-type') || 'message';
+                node.custom_trigger = data.val_trigger;
+                node.custom_text = data.val_text;
+                node.custom_var = data.val_var;
+                node.custom_type = data.val_type;
+                node.custom_media_type = data.val_media_type;
+                node.custom_buttons_list = data.val_buttons;
+                node.custom_media_url = data.val_media_url;
+            }
+        }
+
+        try {
+            const res = await fetch(gasUrl, {
+                method: 'POST',
+                body: JSON.stringify({ action: 'deploy', token: token, graph: graph })
+            });
+            const data = await res.json();
+            if (data.success) {
+                alert("🎉 Успешно! Бот развернут на Google Apps Script и работает 24/7!");
+            } else {
+                alert("Ошибка развертывания: " + (data.message || 'Неизвестная ошибка'));
+            }
+        } catch (e) {
+            alert("Ошибка соединения с Google Apps Script: " + e.message);
         }
     }
 </script>
